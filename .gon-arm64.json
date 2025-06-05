@@ -1,6 +1,6 @@
 {
-  "source": ["./dist/macos-arm64_darwin_arm64_v8.0/baton-ldap"],
-  "bundle_id": "com.conductorone.baton-ldap",
+  "source": ["./dist/macos-arm64_darwin_arm64_v8.0/baton-ipa"],
+  "bundle_id": "com.conductorone.baton-ipa",
   "apple_id": {
     "username" : "justin.gallardo@conductorone.com"
   },
@@ -8,6 +8,6 @@
     "application_identity": "Developer ID Application: Justin Gallardo (858DKH55XL)"
   },
   "zip" :{
-    "output_path":  "./dist/baton-ldap-darwin-arm64.signed.zip"
+    "output_path":  "./dist/baton-ipa-darwin-arm64.signed.zip"
   }
 }

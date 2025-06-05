@@ -42,7 +42,7 @@ jobs:
           go-version-file: 'go.mod'
 
       - name: Build
-        run: go build -o connector ./cmd/baton-ldap
+        run: go build -o connector ./cmd/baton-ipa
 
       - name: Run and save output
         env:

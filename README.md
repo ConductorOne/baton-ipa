@@ -1,8 +1,8 @@
 ![Baton Logo](./docs/images/baton-logo.png)
 
-# `baton-ldap` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-ldap.svg)](https://pkg.go.dev/github.com/conductorone/baton-ldap) ![main ci](https://github.com/conductorone/baton-ldap/actions/workflows/main.yaml/badge.svg)
+# `baton-ipa` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-ipa.svg)](https://pkg.go.dev/github.com/conductorone/baton-ipa) ![main ci](https://github.com/conductorone/baton-ipa/actions/workflows/main.yaml/badge.svg)
 
-`baton-ldap` is a connector for LDAP built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It communicates with the LDAP protocol to sync data about roles, users, and groups.
+`baton-ipa` is a connector for LDAP built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It communicates with the LDAP protocol to sync data about roles, users, and groups.
 
 Check out [Baton](https://github.com/conductorone/baton) to learn more about the project in general.
 
@@ -18,16 +18,16 @@ _Also see [Set up an LDAP connector](https://www.conductorone.com/docs/product/i
 
 ## Installing
 
-The latest release is available from the [`baton-ldap` Github releases page](https://github.com/ConductorOne/baton-ldap/releases).
+The latest release is available from the [`baton-ipa` Github releases page](https://github.com/ConductorOne/baton-ipa/releases).
 
-Pre-built container images compatible with Docker and other container runtimes are [published to GHCR](https://github.com/ConductorOne/baton-ldap/pkgs/container/baton-ldap):
+Pre-built container images compatible with Docker and other container runtimes are [published to GHCR](https://github.com/ConductorOne/baton-ipa/pkgs/container/baton-ipa):
 ```
-docker pull ghcr.io/conductorone/baton-ldap:latest
+docker pull ghcr.io/conductorone/baton-ipa:latest
 ```
 
-Additionally for testing on workstations, `baton-ldap` can be installed from Homebrew:
+Additionally for testing on workstations, `baton-ipa` can be installed from Homebrew:
 ```
-brew install conductorone/baton/baton conductorone/baton/baton-ldap
+brew install conductorone/baton/baton conductorone/baton/baton-ipa
 ```
 
 ## Common Configuration Options
@@ -40,11 +40,11 @@ brew install conductorone/baton/baton conductorone/baton/baton-ldap
 | `--base-dn` | `BATON_BASE_DN`   |  **optional** Base Distinguished name to search for LDAP objects in, for example `DC=example,DC=com` |
 | `--user-search-dn` | `BATON_USER_SEARCH_DN` |  **optional**  Distinguished name to search for User objects in.  If unset the Base DN is used. |
 | `--group-search-dn` | `BATON_GROUP_SEARCH_DN` |  **optional**  Distinguished name to search for User objects in.  If unset the Base DN is used. |
-| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable Provisioning of Groups by `baton-ldap`. `true` or `false`.  Defaults to `false` |
+| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable Provisioning of Groups by `baton-ipa`. `true` or `false`.  Defaults to `false` |
 
-Use `baton-ldap --help` to see all configuration flags and environment variables.
+Use `baton-ipa --help` to see all configuration flags and environment variables.
 
-# Developing baton-ldap
+# Developing baton-ipa
 
 ## How to test with Docker Compose
 You can use [compose.yaml](./compose.yaml) to launch an LDAP server and a PHP LDAP admin server to interact with the LDAP server.
@@ -58,8 +58,8 @@ password: `admin`
 
 After you login you can create new resources to be synced by baton. 
 
-After creating new resources on the LDAP server, use the `baton-ldap` cli to sync the data from the LDAP server with the example command below.
-`baton-ldap --base-dn dc=example,dc=org --bind-dn cn=admin,dc=example,dc=org --password admin --domain localhost`
+After creating new resources on the LDAP server, use the `baton-ipa` cli to sync the data from the LDAP server with the example command below.
+`baton-ipa --base-dn dc=example,dc=org --bind-dn cn=admin,dc=example,dc=org --password admin --domain localhost`
 
 After successfully syncing data, use the baton CLI to list the resources and see the synced data.
 `baton resources`
@@ -67,13 +67,13 @@ After successfully syncing data, use the baton CLI to list the resources and see
 
 # Data Model
 
-`baton-ldap` will fetch information about the following LDAP resources:
+`baton-ipa` will fetch information about the following LDAP resources:
 
 - Users
 - Roles as `organizationalRole` in LDAP
 - Groups as `groupOfUniqueNames` in LDAP
 
-`baton-ldap` will sync information only from under the base DN specified by the `--base-dn` flag in the configuration.
+`baton-ipa` will sync information only from under the base DN specified by the `--base-dn` flag in the configuration.
 
 # Contributing, Support and Issues
 

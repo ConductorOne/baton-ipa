@@ -1,21 +1,21 @@
 version: 2
-project_name: baton-ldap
+project_name: baton-ipa
 builds:
-  - binary: baton-ldap
+  - binary: baton-ipa
     env:
       - CGO_ENABLED=0
     id: linux
-    main: ./cmd/baton-ldap
+    main: ./cmd/baton-ipa
     goos:
       - linux
     goarch:
       - amd64
       - arm64
-  - binary: baton-ldap
+  - binary: baton-ipa
     env:
       - CGO_ENABLED=0
     id: macos-amd64
-    main: ./cmd/baton-ldap
+    main: ./cmd/baton-ipa
     goos:
       - darwin
     goarch:
@@ -23,12 +23,12 @@ builds:
     hooks:
       post:
         - gon .gon-amd64.json
-        - mv dist/baton-ldap-darwin-amd64.signed.zip dist/macos-amd64_darwin_amd64_v1/baton-ldap
-  - binary: baton-ldap
+        - mv dist/baton-ipa-darwin-amd64.signed.zip dist/macos-amd64_darwin_amd64_v1/baton-ipa
+  - binary: baton-ipa
     env:
       - CGO_ENABLED=0
     id: macos-arm64
-    main: ./cmd/baton-ldap
+    main: ./cmd/baton-ipa
     goos:
       - darwin
     goarch:
@@ -36,12 +36,12 @@ builds:
     hooks:
       post:
         - gon .gon-arm64.json
-        - mv dist/baton-ldap-darwin-arm64.signed.zip dist/macos-arm64_darwin_arm64_v8.0/baton-ldap
-  - binary: baton-ldap
+        - mv dist/baton-ipa-darwin-arm64.signed.zip dist/macos-arm64_darwin_arm64_v8.0/baton-ipa
+  - binary: baton-ipa
     env:
       - CGO_ENABLED=0
     id: windows
-    main: ./cmd/baton-ldap
+    main: ./cmd/baton-ipa
     goos:
       - windows
     goarch:
@@ -89,9 +89,9 @@ brews:
     directory: Formula
     homepage: https://conductorone.com
     test: |
-      system "#{bin}/baton-ldap -v"
+      system "#{bin}/baton-ipa -v"
     install: |-
-      bin.install "baton-ldap"
+      bin.install "baton-ipa"
 changelog:
   filters:
     exclude:

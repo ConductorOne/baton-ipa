@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/conductorone/baton-ldap/pkg/ldap"
+	"github.com/conductorone/baton-ipa/pkg/ldap"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -172,7 +172,7 @@ func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 
 func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
 	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ldap: only users can have role membership granted")
+		return nil, fmt.Errorf("baton-ipa: only users can have role membership granted")
 	}
 
 	roleDN := entitlement.Resource.Id.Resource
@@ -198,7 +198,7 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 	principal := grant.Principal
 
 	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ldap: only users can have role membership revoked")
+		return nil, fmt.Errorf("baton-ipa: only users can have role membership revoked")
 	}
 
 	roleDN := entitlement.Resource.Id.Resource

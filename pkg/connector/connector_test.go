@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/conductorone/baton-ldap/pkg/config"
+	"github.com/conductorone/baton-ipa/pkg/config"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"

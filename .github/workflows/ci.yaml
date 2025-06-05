@@ -90,16 +90,16 @@ jobs:
         run: ./scripts/import.sh
       - name: Install baton
         run: ./scripts/get-baton.sh && mv baton /usr/local/bin
-      - name: Build baton-ldap
-        run: go build ./cmd/baton-ldap
-      - name: Run baton-ldap
-        run: ./baton-ldap
+      - name: Build baton-ipa
+        run: go build ./cmd/baton-ipa
+      - name: Run baton-ipa
+        run: ./baton-ipa
       - name: List grants
         run: baton grants
       - name: Test grant/revoking posixGroup entitlements
         env:
           BATON: baton
-          BATON_LDAP: ./baton-ldap
+          BATON_LDAP: ./baton-ipa
           BATON_ENTITLEMENT: "group:cn=testgroup00000,dc=example,dc=org:member"
           BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
           BATON_PRINCIPAL_TYPE: "user"
@@ -107,7 +107,7 @@ jobs:
       - name: Test grant/revoking groupOfUniqueNames entitlements
         env:
           BATON: baton
-          BATON_LDAP: ./baton-ldap
+          BATON_LDAP: ./baton-ipa
           BATON_ENTITLEMENT: "group:cn=othertestgroup00000,dc=example,dc=org:member"
           BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
           BATON_PRINCIPAL_TYPE: "user"

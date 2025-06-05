@@ -1,4 +1,4 @@
-module github.com/conductorone/baton-ldap
+module github.com/conductorone/baton-ipa
 
 go 1.23.4
 

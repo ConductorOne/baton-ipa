@@ -57,14 +57,14 @@ func (c *Client) getConnection(ctx context.Context, isModify bool, f func(client
 	connectAttempts := 0
 	for connectAttempts < maxConnectAttempts {
 		if connectAttempts > 0 {
-			l.Warn("baton-ldap: retrying connection", zap.Int("attempts", connectAttempts), zap.Int("maxAttempts", maxConnectAttempts))
+			l.Warn("baton-ipa: retrying connection", zap.Int("attempts", connectAttempts), zap.Int("maxAttempts", maxConnectAttempts))
 			time.Sleep(time.Duration(connectAttempts) * time.Second)
 		}
 		var cp *puddle.Resource[*ldapConn]
 		cp, err = c.pool.Acquire(ctx)
 		if err != nil {
 			if isNetworkError(err) {
-				l.Warn("baton-ldap: network error acquiring connection. retrying", zap.Error(err), zap.Int("attempts", connectAttempts), zap.Int("maxAttempts", maxConnectAttempts))
+				l.Warn("baton-ipa: network error acquiring connection. retrying", zap.Error(err), zap.Int("attempts", connectAttempts), zap.Int("maxAttempts", maxConnectAttempts))
 				if cp != nil {
 					cp.Destroy()
 				}
@@ -72,7 +72,7 @@ func (c *Client) getConnection(ctx context.Context, isModify bool, f func(client
 				continue
 			}
 
-			l.Error("baton-ldap: client failed to acquire connection", zap.Error(err))
+			l.Error("baton-ipa: client failed to acquire connection", zap.Error(err))
 			return err
 		}
 		poolClient := cp.Value()
@@ -80,7 +80,7 @@ func (c *Client) getConnection(ctx context.Context, isModify bool, f func(client
 		err = f(poolClient)
 		if err != nil {
 			if isNetworkError(err) {
-				l.Warn("baton-ldap: network error. retrying", zap.Error(err), zap.Int("attempts", connectAttempts), zap.Int("maxAttempts", maxConnectAttempts))
+				l.Warn("baton-ipa: network error. retrying", zap.Error(err), zap.Int("attempts", connectAttempts), zap.Int("maxAttempts", maxConnectAttempts))
 				cp.Destroy()
 				connectAttempts++
 				continue
@@ -96,7 +96,7 @@ func (c *Client) getConnection(ctx context.Context, isModify bool, f func(client
 			) && isModify {
 				return nil
 			}
-			l.Error("baton-ldap: client failed to run function", zap.Error(err))
+			l.Error("baton-ipa: client failed to run function", zap.Error(err))
 			cp.Release()
 			return err
 		}
@@ -215,11 +215,11 @@ func (c *Client) _ldapSearch(ctx context.Context,
 		})
 		if err != nil {
 			if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
-				notFoundError := status.Errorf(codes.NotFound, "baton-ldap: no such object")
-				l.Warn("baton-ldap: no such object", zap.Error(err), zap.String("search_dn", baseDN), zap.String("filter", filter), zap.Strings("attrNames", attrNames))
+				notFoundError := status.Errorf(codes.NotFound, "baton-ipa: no such object")
+				l.Warn("baton-ipa: no such object", zap.Error(err), zap.String("search_dn", baseDN), zap.String("filter", filter), zap.Strings("attrNames", attrNames))
 				return errors.Join(notFoundError, err)
 			}
-			l.Error("baton-ldap: client failed to search", zap.Error(err))
+			l.Error("baton-ipa: client failed to search", zap.Error(err))
 			return err
 		}
 
@@ -238,7 +238,7 @@ func (c *Client) _ldapSearch(ctx context.Context,
 			l.Info("Retrying search without page token", zap.Error(err), zap.String("filter", filter), zap.String("search_dn", searchDN.String()))
 			return c._ldapSearch(ctx, searchScope, searchDN, filter, attrNames, "", pageSize, attempts+1)
 		}
-		l.Error("baton-ldap: client failed to get connection", zap.Error(err))
+		l.Error("baton-ipa: client failed to get connection", zap.Error(err))
 		return nil, "", err
 	}
 
@@ -254,7 +254,7 @@ func (c *Client) LdapModify(ctx context.Context, modifyRequest *ldap.ModifyReque
 		return client.conn.Modify(modifyRequest)
 	})
 	if err != nil {
-		l.Error("baton-ldap: client failed to modify record", zap.Error(err))
+		l.Error("baton-ipa: client failed to modify record", zap.Error(err))
 		return err
 	}
 
@@ -270,7 +270,7 @@ func (c *Client) LdapDelete(ctx context.Context, deleteRequest *ldap.DelRequest)
 		return client.conn.Del(deleteRequest)
 	})
 	if err != nil {
-		l.Error("baton-ldap: client failed to delete record", zap.Error(err))
+		l.Error("baton-ipa: client failed to delete record", zap.Error(err))
 		return err
 	}
 

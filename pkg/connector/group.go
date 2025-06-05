@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/conductorone/baton-ldap/pkg/ldap"
+	"github.com/conductorone/baton-ipa/pkg/ldap"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -449,7 +449,7 @@ func (g *groupResourceType) getGroup(ctx context.Context, groupDN string) (*ldap
 
 func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
 	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ldap: only users can have group membership granted")
+		return nil, fmt.Errorf("baton-ipa: only users can have group membership granted")
 	}
 
 	groupDN := entitlement.Resource.Id.Resource
@@ -497,7 +497,7 @@ func (g *groupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annota
 	principal := grant.Principal
 
 	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ldap: only users can have group membership revoked")
+		return nil, fmt.Errorf("baton-ipa: only users can have group membership revoked")
 	}
 
 	groupDN := entitlement.Resource.Id.Resource

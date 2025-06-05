@@ -3,8 +3,8 @@
 set -exo pipefail
 
 if [ -z "$BATON_LDAP" ]; then
-  echo "BATON_LDAP not set. using baton-ldap"
-  BATON_LDAP=baton-ldap
+  echo "BATON_LDAP not set. using baton-ipa"
+  BATON_LDAP=baton-ipa
 fi
 if [ -z "$BATON" ]; then
   echo "BATON not set. using baton"

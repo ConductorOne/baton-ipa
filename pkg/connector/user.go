@@ -17,7 +17,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
 
-	"github.com/conductorone/baton-ldap/pkg/ldap"
+	"github.com/conductorone/baton-ipa/pkg/ldap"
 )
 
 // InetOrgPerson resource structure

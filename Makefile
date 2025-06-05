@@ -3,14 +3,14 @@ GOARCH = $(shell go env GOARCH)
 BUILD_DIR = dist/${GOOS}_${GOARCH}
 
 ifeq ($(GOOS),windows)
-OUTPUT_PATH = ${BUILD_DIR}/baton-ldap.exe
+OUTPUT_PATH = ${BUILD_DIR}/baton-ipa.exe
 else
-OUTPUT_PATH = ${BUILD_DIR}/baton-ldap
+OUTPUT_PATH = ${BUILD_DIR}/baton-ipa
 endif
 
 .PHONY: build
 build:
-	go build -o ${OUTPUT_PATH} ./cmd/baton-ldap
+	go build -o ${OUTPUT_PATH} ./cmd/baton-ipa
 
 .PHONY: update-deps
 update-deps:

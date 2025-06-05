@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/conductorone/baton-ldap/pkg/ldap"
+	"github.com/conductorone/baton-ipa/pkg/ldap"
 	"github.com/conductorone/baton-sdk/pkg/field"
 	ldap3 "github.com/go-ldap/ldap/v3"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"

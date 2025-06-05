@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/conductorone/baton-ldap/pkg/config"
-	"github.com/conductorone/baton-ldap/pkg/connector"
+	"github.com/conductorone/baton-ipa/pkg/config"
+	"github.com/conductorone/baton-ipa/pkg/connector"
 	configschema "github.com/conductorone/baton-sdk/pkg/config"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/types"
@@ -20,7 +20,7 @@ var version = "dev"
 func main() {
 	ctx := context.Background()
 
-	_, cmd, err := configschema.DefineConfiguration(ctx, "baton-ldap", getConnector, config.Configuration)
+	_, cmd, err := configschema.DefineConfiguration(ctx, "baton-ipa", getConnector, config.Configuration)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
