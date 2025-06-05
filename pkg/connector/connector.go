@@ -54,9 +54,9 @@ func (l *LDAP) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceS
 
 func (l *LDAP) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	return &v2.ConnectorMetadata{
-		DisplayName: "LDAP",
+		DisplayName: "IPA",
 		// TODO: add better description
-		Description: "LDAP connector for Baton",
+		Description: "IPA connector for Baton",
 	}, nil
 }
 
@@ -77,10 +77,10 @@ func (l *LDAP) Validate(ctx context.Context) (annotations.Annotations, error) {
 	return nil, nil
 }
 
-// New returns the LDAP connector.
+// New returns the IPA connector.
 func New(ctx context.Context, cf *config.Config) (*LDAP, error) {
 	l := ctxzap.Extract(ctx)
-	l.Debug("creating new LDAP connector",
+	l.Debug("creating new IPA connector",
 		zap.Stringer("server_url", cf.ServerURL),
 		zap.Stringer("bind_dn", cf.BindDN),
 		zap.Bool("disable_operational_attrs", cf.DisableOperationalAttrs))

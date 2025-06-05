@@ -2,7 +2,7 @@
 
 # `baton-ipa` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-ipa.svg)](https://pkg.go.dev/github.com/conductorone/baton-ipa) ![main ci](https://github.com/conductorone/baton-ipa/actions/workflows/main.yaml/badge.svg)
 
-`baton-ipa` is a connector for LDAP built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It communicates with the LDAP protocol to sync data about roles, users, and groups.
+`baton-ipa` is a connector for IPA (Identity, Policy & Audit) Servers built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It communicates using the LDAP protocol to sync data about roles, users, and groups.
 
 Check out [Baton](https://github.com/conductorone/baton) to learn more about the project in general.
 
@@ -10,7 +10,7 @@ Check out [Baton](https://github.com/conductorone/baton) to learn more about the
 
 ## Credentials
 
-To access the LDAP server, you must provide the username and password you use to login to the LDAP server. 
+To access the IPA server, you must provide the username and password you use to login to the IPA server. 
 
 # Getting Started
 
