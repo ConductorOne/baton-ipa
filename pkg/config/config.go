@@ -62,7 +62,7 @@ var ConfigRelations = []field.SchemaFieldRelationship{
 	field.FieldsAtLeastOneUsed(domainField, urlField),
 }
 
-var Configuration = field.NewConfiguration(ConfigurationFields, ConfigRelations...)
+var Configuration = field.NewConfiguration(ConfigurationFields, field.WithConstraints(ConfigRelations...))
 
 func New(ctx context.Context, v *viper.Viper) (*Config, error) {
 	l := ctxzap.Extract(ctx)
