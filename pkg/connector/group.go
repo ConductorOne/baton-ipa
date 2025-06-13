@@ -20,20 +20,12 @@ import (
 )
 
 var objectClassesToResourceTypes = map[string]*v2.ResourceType{
-	"group":                resourceTypeGroup,
-	"groupOfNames":         resourceTypeGroup,
-	"groupOfUniqueNames":   resourceTypeGroup,
-	"inetOrgPerson":        resourceTypeUser,
-	"posixGroup":           resourceTypeGroup,
-	"organizationalPerson": resourceTypeUser,
-	"person":               resourceTypeUser,
-	"user":                 resourceTypeUser,
+	"ipaUserGroup": resourceTypeGroup,
+	"posixAccount": resourceTypeUser,
 }
 
 const (
-	groupObjectClasses = "(objectClass=groupOfUniqueNames)(objectClass=groupOfNames)(objectClass=posixGroup)(objectClass=group)"
-	groupFilter        = "(|" + groupObjectClasses + ")"
-	groupIdFilter      = "(&(gidNumber=%s)(|" + groupObjectClasses + "))"
+	groupFilter = "(&(objectClass=ipausergroup)" + excludeCompatFilter + ")"
 
 	groupMemberUIDFilter        = `(&` + userFilter + `(uid=%s))`
 	groupMemberCommonNameFilter = `(&` + userFilter + `(cn=%s))`
@@ -67,6 +59,11 @@ func (g *groupResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 
 // Create a new connector resource for an LDAP Group.
 func groupResource(ctx context.Context, group *ldap.Entry) (*v2.Resource, error) {
+	ipaUniqueID := group.GetEqualFoldAttributeValue(attrIPAUniqueID)
+	if ipaUniqueID == "" {
+		return nil, fmt.Errorf("ldap-connector: group %s has no ipaUniqueID", group.DN)
+	}
+
 	gdn, err := ldap.CanonicalizeDN(group.DN)
 	if err != nil {
 		return nil, err
@@ -100,7 +97,7 @@ func groupResource(ctx context.Context, group *ldap.Entry) (*v2.Resource, error)
 	resource, err := rs.NewGroupResource(
 		groupName,
 		resourceTypeGroup,
-		groupDN,
+		ipaUniqueID,
 		groupTraitOptions,
 		groupRsTraitOptions...,
 	)
@@ -242,6 +239,12 @@ func newGrantFromEntry(groupResource *v2.Resource, entry *ldap3.Entry) *v2.Grant
 
 func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
+
+	externalId := resource.GetExternalId()
+	if externalId == nil {
+		return nil, "", nil, fmt.Errorf("ldap-connector: group %s has no external ID", resource.Id.Resource)
+	}
+
 	groupDN, err := ldap.CanonicalizeDN(resource.Id.Resource)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("ipa-connector: invalid group DN: '%s' in group grants: %w", resource.Id.Resource, err)

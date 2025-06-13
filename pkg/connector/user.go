@@ -23,7 +23,6 @@ import (
 // InetOrgPerson resource structure
 // https://datatracker.ietf.org/doc/html/rfc2798
 const (
-	excludeCompatFilter   = "(!(cn:dn:=compat))"
 	userFilter            = "(&(objectClass=posixAccount)" + excludeCompatFilter + ")"
 	attrUserUID           = "uid"
 	attrUserCommonName    = "cn"
@@ -33,7 +32,6 @@ const (
 	attrUserDisplayName   = "displayName"
 	attrUserCreatedAt     = "createTimestamp"
 	attrUserAuthTimestamp = "authTimestamp"
-	attrIPAUniqueID       = "ipaUniqueID"
 	attrNSAccountLock     = "nsAccountLock"
 )
 
