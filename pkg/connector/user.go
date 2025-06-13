@@ -23,8 +23,8 @@ import (
 // InetOrgPerson resource structure
 // https://datatracker.ietf.org/doc/html/rfc2798
 const (
-	userObjectClasses     = "(objectClass=inetOrgPerson)(objectClass=person)(objectClass=user)(objectClass=organizationalPerson)"
-	userFilter            = "(|" + userObjectClasses + ")"
+	excludeCompatFilter   = "(!(cn:dn:=compat))"
+	userFilter            = "(&(objectClass=posixAccount)" + excludeCompatFilter + ")"
 	attrUserUID           = "uid"
 	attrUserCommonName    = "cn"
 	attrFirstName         = "givenName"
