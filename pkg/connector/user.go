@@ -231,6 +231,9 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		resourceTypeUser,
 		ipaUniqueID,
 		userTraitOptions,
+		rs.WithExternalID(&v2.ExternalId{
+			Id: user.DN,
+		}),
 	)
 	if err != nil {
 		return nil, err
