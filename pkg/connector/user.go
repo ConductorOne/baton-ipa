@@ -34,15 +34,7 @@ const (
 	attrUserCreatedAt     = "createTimestamp"
 	attrUserAuthTimestamp = "authTimestamp"
 	attrObjectGUID        = "objectGUID"
-
-	// Microsoft active directory specific attribute.
-	attrsAMAccountName     = "sAMAccountName"
-	attrUserPrincipalName  = "userPrincipalName"
-	attrUserAccountControl = "userAccountControl"
-	attrUserLastLogon      = "lastLogonTimestamp"
-
-	// FreeIPA (Red Hat Identity) specific attributes.
-	attrNSAccountLock = "nsAccountLock"
+	attrNSAccountLock     = "nsAccountLock"
 )
 
 var allAttrs = []string{"*", "+"}
@@ -78,24 +70,9 @@ func parseUserNames(user *ldap.Entry) (string, string, string) {
 func parseUserStatus(user *ldap.Entry) (v2.UserTrait_Status_Status, error) {
 	userStatus := v2.UserTrait_Status_STATUS_UNSPECIFIED
 
-	// Currently only UserAccountControlFlag from Microsoft or nsAccountLock from FreeIPA is supported
-	userAccountControlFlag := user.GetEqualFoldAttributeValue(attrUserAccountControl)
 	nsAccountLockFlag := user.GetEqualFoldAttributeValue(attrNSAccountLock)
 
-	if userAccountControlFlag != "" {
-		userAccountControlFlag, err := strconv.ParseInt(userAccountControlFlag, 10, 64)
-		if err != nil {
-			return userStatus, err
-		}
-		// Check if the ACCOUNTDISABLE flag (bit 2) is set
-		// https://learn.microsoft.com/en-us/troubleshoot/windows-server/identity/useraccountcontrol-manipulate-account-properties
-		if (userAccountControlFlag & 2) == 0 {
-			userStatus = v2.UserTrait_Status_STATUS_ENABLED
-		} else {
-			userStatus = v2.UserTrait_Status_STATUS_DISABLED
-		}
-		return userStatus, nil
-	} else if nsAccountLockFlag != "" {
+	if nsAccountLockFlag != "" {
 		locked, _ := strconv.ParseBool(nsAccountLockFlag)
 		if locked {
 			userStatus = v2.UserTrait_Status_STATUS_DISABLED
@@ -111,13 +88,11 @@ func parseUserLogin(user *ldap.Entry) (string, []string) {
 	login := ""
 	aliases := mapset.NewSet[string]()
 
-	sAMAccountName := user.GetEqualFoldAttributeValue(attrsAMAccountName)
 	uid := user.GetEqualFoldAttributeValue(attrUserUID)
 	cn := user.GetEqualFoldAttributeValue(attrUserCommonName)
-	principalName := user.GetEqualFoldAttributeValue(attrUserPrincipalName)
 	guid := user.GetEqualFoldAttributeValue(attrObjectGUID)
 
-	for _, attr := range []string{sAMAccountName, uid, cn, principalName, guid} {
+	for _, attr := range []string{uid, cn, guid} {
 		if attr == "" || containsBinaryData(attr) {
 			continue
 		}
@@ -234,11 +209,8 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		userTraitOptions = append(userTraitOptions, rs.WithCreatedAt(createTime))
 	}
 
-	// Try openldap format first, then fall back to Active Directory's format
-	lastLogin, err := parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserLastLogon))
-	if err != nil {
-		lastLogin, _ = parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserAuthTimestamp))
-	}
+	// This might not be supported by FreeIPA
+	lastLogin, _ := parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserAuthTimestamp))
 	if lastLogin != nil {
 		userTraitOptions = append(userTraitOptions, rs.WithLastLogin(*lastLogin))
 	}
