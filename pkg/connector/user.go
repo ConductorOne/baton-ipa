@@ -39,6 +39,21 @@ const (
 
 var allAttrs = []string{"*", "+"}
 
+var (
+	stagedUsersDN *ldap3.RelativeDN = &ldap3.RelativeDN{Attributes: []*ldap3.AttributeTypeAndValue{
+		{
+			Type:  "cn",
+			Value: "staged users",
+		},
+	}}
+	preservedUsersDN *ldap3.RelativeDN = &ldap3.RelativeDN{Attributes: []*ldap3.AttributeTypeAndValue{
+		{
+			Type:  "cn",
+			Value: "deleted users",
+		},
+	}}
+)
+
 type userResourceType struct {
 	resourceType            *v2.ResourceType
 	client                  *ldap.Client
@@ -67,8 +82,16 @@ func parseUserNames(user *ldap.Entry) (string, string, string) {
 	return firstName, lastName, displayName
 }
 
-func parseUserStatus(user *ldap.Entry) (v2.UserTrait_Status_Status, error) {
+func parseUserStatus(user *ldap.Entry, userDN *ldap3.DN) (v2.UserTrait_Status_Status, string, error) {
+	var status string
+	status = "active"
 	userStatus := v2.UserTrait_Status_STATUS_UNSPECIFIED
+
+	if containsRDN(userDN, stagedUsersDN) {
+		status = "staged"
+	} else if containsRDN(userDN, preservedUsersDN) {
+		status = "preserved"
+	}
 
 	nsAccountLockFlag := user.GetEqualFoldAttributeValue(attrNSAccountLock)
 
@@ -81,7 +104,7 @@ func parseUserStatus(user *ldap.Entry) (v2.UserTrait_Status_Status, error) {
 		}
 	}
 
-	return userStatus, nil
+	return userStatus, status, nil
 }
 
 func parseUserLogin(user *ldap.Entry) (string, []string) {
@@ -170,10 +193,11 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		}
 	}
 
-	userStatus, err := parseUserStatus(user)
+	userStatus, provisionStatus, err := parseUserStatus(user, udn)
 	if err != nil {
 		return nil, err
 	}
+	profile["provision_status"] = provisionStatus
 
 	// If the user status is not set, default to enabled
 	if userStatus == v2.UserTrait_Status_STATUS_UNSPECIFIED {
@@ -231,9 +255,7 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		resourceTypeUser,
 		ipaUniqueID,
 		userTraitOptions,
-		rs.WithExternalID(&v2.ExternalId{
-			Id: user.DN,
-		}),
+		rs.WithExternalID(&v2.ExternalId{Id: user.DN}),
 	)
 	if err != nil {
 		return nil, err
