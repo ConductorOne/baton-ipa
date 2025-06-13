@@ -33,7 +33,7 @@ const (
 	attrUserDisplayName   = "displayName"
 	attrUserCreatedAt     = "createTimestamp"
 	attrUserAuthTimestamp = "authTimestamp"
-	attrObjectGUID        = "objectGUID"
+	attrIPAUniqueID       = "ipaUniqueID"
 	attrNSAccountLock     = "nsAccountLock"
 )
 
@@ -90,9 +90,8 @@ func parseUserLogin(user *ldap.Entry) (string, []string) {
 
 	uid := user.GetEqualFoldAttributeValue(attrUserUID)
 	cn := user.GetEqualFoldAttributeValue(attrUserCommonName)
-	guid := user.GetEqualFoldAttributeValue(attrObjectGUID)
 
-	for _, attr := range []string{uid, cn, guid} {
+	for _, attr := range []string{uid, cn} {
 		if attr == "" || containsBinaryData(attr) {
 			continue
 		}
@@ -138,6 +137,11 @@ func containsBinaryData(value string) bool {
 // Create a new connector resource for an LDAP User.
 func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 	l := ctxzap.Extract(ctx)
+
+	ipaUniqueID := user.GetEqualFoldAttributeValue(attrIPAUniqueID)
+	if ipaUniqueID == "" {
+		return nil, fmt.Errorf("ldap-connector: user %s has no ipaUniqueID", user.DN)
+	}
 
 	firstName, lastName, displayName := parseUserNames(user)
 	userId := user.GetEqualFoldAttributeValue(attrUserUID)
@@ -225,7 +229,7 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 	resource, err := rs.NewUserResource(
 		displayName,
 		resourceTypeUser,
-		userDN,
+		ipaUniqueID,
 		userTraitOptions,
 	)
 	if err != nil {
