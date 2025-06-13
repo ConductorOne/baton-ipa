@@ -127,7 +127,7 @@ func (g *groupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagi
 		ResourcesPageSize,
 	)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ldap-connector: failed to list groups in '%s': %w", g.groupSearchDN.String(), err)
+		return nil, "", nil, fmt.Errorf("ipa-connector: failed to list groups in '%s': %w", g.groupSearchDN.String(), err)
 	}
 
 	pageToken, err := bag.NextToken(nextPage)
@@ -155,23 +155,23 @@ func (g *groupResourceType) Get(ctx context.Context, resourceId *v2.ResourceId, 
 
 	groupDN, err := ldap.CanonicalizeDN(resourceId.Resource)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ldap-connector: failed to canonicalize group DN: %w", err)
+		return nil, nil, fmt.Errorf("ipa-connector: failed to canonicalize group DN: %w", err)
 	}
 
 	groupEntries, _, err := g.client.LdapSearch(ctx, ldap3.ScopeBaseObject, groupDN, groupFilter, allAttrs, "", ResourcesPageSize)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ldap-connector: failed to get group: %w", err)
+		return nil, nil, fmt.Errorf("ipa-connector: failed to get group: %w", err)
 	}
 
 	if len(groupEntries) == 0 {
-		return nil, nil, fmt.Errorf("ldap-connector: group not found")
+		return nil, nil, fmt.Errorf("ipa-connector: group not found")
 	}
 
 	groupEntry := groupEntries[0]
 
 	gr, err := groupResource(ctx, groupEntry)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ldap-connector: failed to get group: %w", err)
+		return nil, nil, fmt.Errorf("ipa-connector: failed to get group: %w", err)
 	}
 
 	return gr, nil, nil
@@ -244,7 +244,7 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 	l := ctxzap.Extract(ctx)
 	groupDN, err := ldap.CanonicalizeDN(resource.Id.Resource)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ldap-connector: invalid group DN: '%s' in group grants: %w", resource.Id.Resource, err)
+		return nil, "", nil, fmt.Errorf("ipa-connector: invalid group DN: '%s' in group grants: %w", resource.Id.Resource, err)
 	}
 	l = l.With(zap.Stringer("group_dn", groupDN))
 
@@ -262,7 +262,7 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 	}
 
 	if err != nil {
-		l.Error("ldap-connector: failed to list group members", zap.String("group_dn", resource.Id.Resource), zap.Error(err))
+		l.Error("ipa-connector: failed to list group members", zap.String("group_dn", resource.Id.Resource), zap.Error(err))
 
 		// Some LDAP servers lie and return a group DN that doesn't actually exist.
 		// Or the group got deleted between List() and Grants().
@@ -270,7 +270,7 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 			return nil, "", nil, nil
 		}
 
-		err := fmt.Errorf("ldap-connector: failed to list group %s members: %w", resource.Id.Resource, err)
+		err := fmt.Errorf("ipa-connector: failed to list group %s members: %w", resource.Id.Resource, err)
 		return nil, "", nil, err
 	}
 
@@ -291,7 +291,7 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 				1,
 			)
 			if err != nil {
-				l.Error("ldap-connector: failed to get group member", zap.String("group", groupDN.String()), zap.String("member_id", memberId), zap.Error(err))
+				l.Error("ipa-connector: failed to get group member", zap.String("group", groupDN.String()), zap.String("member_id", memberId), zap.Error(err))
 			}
 			var g *v2.Grant
 			if len(member) == 1 {
@@ -333,12 +333,12 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 			ResourcesPageSize,
 		)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("ldap-connector: failed to list group members: %w", err)
+			return nil, "", nil, fmt.Errorf("ipa-connector: failed to list group members: %w", err)
 		}
 		for _, userEntry := range userEntries {
 			userDN, err := ldap.CanonicalizeDN(userEntry.DN)
 			if err != nil {
-				l.Error("ldap-connector: invalid user DN", zap.String("user_dn", userEntry.DN), zap.Error(err))
+				l.Error("ipa-connector: invalid user DN", zap.String("user_dn", userEntry.DN), zap.Error(err))
 				continue
 			}
 			g := newGrantFromDN(resource, userDN.String(), resourceTypeUser)
@@ -363,7 +363,7 @@ func (g *groupResourceType) getGroupWithFallback(ctx context.Context, l *zap.Log
 	)
 
 	if err != nil && ldap3.IsErrorAnyOf(err, ldap3.LDAPResultNoSuchObject) {
-		l.Info("ldap-connector: failed to get group by raw DN, using fallback", zap.String("raw_dn", externalId.Id), zap.Error(err))
+		l.Info("ipa-connector: failed to get group by raw DN, using fallback", zap.String("raw_dn", externalId.Id), zap.Error(err))
 		return g.client.LdapGet(
 			ctx,
 			groupDN,
@@ -430,19 +430,19 @@ func (g *groupResourceType) findMemberByFilter(ctx context.Context, memberId str
 	)
 
 	if err != nil {
-		l.Error("ldap-connector: expanding group: failed to get user", zap.String("member_id", memberId), zap.Error(err))
+		l.Error("ipa-connector: expanding group: failed to get user", zap.String("member_id", memberId), zap.Error(err))
 		// returns err, since this is a network error
 		return "", err
 	}
 
 	if len(memberEntry) == 0 {
-		l.Error("ldap-connector: expanding group: failed to find user", zap.String("member_id", memberId), zap.String("search_filter", filter))
+		l.Error("ipa-connector: expanding group: failed to find user", zap.String("member_id", memberId), zap.String("search_filter", filter))
 		return "", nil
 	}
 
 	if len(memberEntry) > 1 {
 		err := fmt.Errorf("multiple users found by search")
-		l.Error("ldap-connector: expanding group: multiple users found by search", zap.String("member_id", memberId), zap.String("search_filter", filter))
+		l.Error("ipa-connector: expanding group: multiple users found by search", zap.String("member_id", memberId), zap.String("search_filter", filter))
 		// note: returning error since this feels like a
 		// developer error?
 		return "", err
@@ -451,7 +451,7 @@ func (g *groupResourceType) findMemberByFilter(ctx context.Context, memberId str
 	mem := memberEntry[0]
 	memDN, err := ldap.CanonicalizeDN(mem.DN)
 	if err != nil {
-		l.Error("ldap-connector: expanding group: invalid DN", zap.String("member_id", memberId), zap.String("search_filter", filter), zap.Error(err), zap.String("member_dn", mem.DN))
+		l.Error("ipa-connector: expanding group: invalid DN", zap.String("member_id", memberId), zap.String("search_filter", filter), zap.Error(err), zap.String("member_dn", mem.DN))
 		// note: returning error since this feels like a
 		// developer error?
 		return "", err
@@ -467,7 +467,7 @@ func (g *groupResourceType) findMemberByFilter(ctx context.Context, memberId str
 func (g *groupResourceType) getGroup(ctx context.Context, groupDN string) (*ldap3.Entry, error) {
 	gdn, err := ldap.CanonicalizeDN(groupDN)
 	if err != nil {
-		return nil, fmt.Errorf("ldap-connector: invalid group DN: '%s' in getGroup: %w", groupDN, err)
+		return nil, fmt.Errorf("ipa-connector: invalid group DN: '%s' in getGroup: %w", groupDN, err)
 	}
 
 	return g.client.LdapGet(
@@ -517,7 +517,7 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 		modifyRequest,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("ldap-connector: failed to grant group membership to user: %w", err)
+		return nil, fmt.Errorf("ipa-connector: failed to grant group membership to user: %w", err)
 	}
 
 	return nil, nil
@@ -573,7 +573,7 @@ func (g *groupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annota
 				return nil, nil
 			}
 		}
-		return nil, fmt.Errorf("ldap-connector: failed to revoke group membership from user: %w", err)
+		return nil, fmt.Errorf("ipa-connector: failed to revoke group membership from user: %w", err)
 	}
 
 	return nil, nil
