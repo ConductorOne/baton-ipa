@@ -19,11 +19,13 @@ import (
 )
 
 const (
-	hostGroupMembershipEntitlement = "member"
+	hostGroupMembershipEntitlement    = "member"
+	hostGroupMemberManagerEntitlement = "manager"
 
 	hostGroupFilter = "(&(objectClass=ipahostgroup))"
 
-	attrHostGroupMember = "member"
+	attrHostGroupMember  = "member"
+	attrHostGroupManager = "memberManager"
 )
 
 type hostGroupResourceType struct {
@@ -115,6 +117,14 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 		assignmentOptions...,
 	))
 
+	rv = append(rv, ent.NewAssignmentEntitlement(
+		resource,
+		hostGroupMemberManagerEntitlement,
+		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+		ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
+		ent.WithDescription(fmt.Sprintf("Manage %s host group in IPA", resource.DisplayName)),
+	))
+
 	return rv, "", nil, nil
 }
 
@@ -139,7 +149,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
 	}
 
-	memberDNs := parseValues(ldapHostGroup, []string{attrHostGroupMember})
+	memberDNs := parseValues(ldapHostGroup, []string{attrHostGroupMember, attrHostGroupManager})
 
 	// create grants
 	var rv []*v2.Grant
@@ -164,10 +174,15 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 			continue
 		}
 		var g *v2.Grant
-		if len(member) == 1 {
-			g = newHostGroupGrantFromEntry(resource, member[0])
-		} else {
+		if len(member) != 1 {
 			l.Warn("baton-ipa: member not found", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
+			continue
+		}
+
+		g = newHostGroupGrantFromEntry(resource, member[0])
+		if g == nil {
+			l.Warn("baton-ipa: member not supported", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
+			continue
 		}
 
 		if g.Id == "" {
@@ -232,24 +247,40 @@ func newHostGroupGrantFromEntry(hostGroupResource *v2.Resource, entry *ldap3.Ent
 		}
 	}
 
-	return newHostGroupGrantFromDN(hostGroupResource, ipaUniqueID, resourceTypeHost)
+	return nil
 }
 
 func newHostGroupGrantFromDN(hostGroupResource *v2.Resource, ipaUniqueID string, resourceType *v2.ResourceType) *v2.Grant {
 	grantOpts := []grant.GrantOption{}
-	if resourceType == resourceTypeHostGroup {
+
+	switch resourceType {
+	case resourceTypeHostGroup:
 		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
 			EntitlementIds: []string{
 				fmt.Sprintf("host_group:%s:member", ipaUniqueID),
 			},
 		}))
+	case resourceTypeGroup:
+		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
+			EntitlementIds: []string{
+				fmt.Sprintf("group:%s:member", ipaUniqueID),
+			},
+		}))
 	}
+
+	entitlement := hostGroupMembershipEntitlement
+	switch resourceType {
+	// Making an assumption that if the resource type is a group or user, the grant is for the manager entitlement
+	case resourceTypeGroup, resourceTypeUser:
+		entitlement = hostGroupMemberManagerEntitlement
+	}
+
 	g := grant.NewGrant(
 		// remove group profile from grant so we're not saving all group memberships in every grant
 		&v2.Resource{
 			Id: hostGroupResource.Id,
 		},
-		groupMemberEntitlement,
+		entitlement,
 		// remove user profile from grant so we're not saving repetitive user info in every grant
 		&v2.ResourceId{
 			ResourceType: resourceType.Id,
