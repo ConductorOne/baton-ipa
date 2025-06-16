@@ -120,6 +120,10 @@ func parseUserLogin(user *ldap.Entry) (string, []string) {
 }
 
 func parseUserLastLogin(lastLoginStr string) (*time.Time, error) {
+	if lastLoginStr == "" {
+		return nil, nil
+	}
+
 	lastLoginTime, err := time.Parse("20060102150405Z0700", lastLoginStr)
 	if err == nil {
 		lastLoginTime = lastLoginTime.UTC()
