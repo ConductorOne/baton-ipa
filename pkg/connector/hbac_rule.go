@@ -26,6 +26,7 @@ const (
 
 	attrIPAEnabledFlag     = "ipaEnabledFlag"
 	attrHBACRuleMemberUser = "memberUser"
+	attrHBACRuleMemberHost = "memberHost"
 )
 
 type hbacRuleResourceType struct {
@@ -169,7 +170,7 @@ func (r *hbacRuleResourceType) Grants(ctx context.Context, resource *v2.Resource
 		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rule %s members: %w", resource.Id.Resource, err)
 	}
 
-	memberDNs := parseValues(ldapHbacRule, []string{attrHBACRuleMemberUser})
+	memberDNs := parseValues(ldapHbacRule, []string{attrHBACRuleMemberUser, attrHBACRuleMemberHost})
 
 	// create grants
 	var rv []*v2.Grant
