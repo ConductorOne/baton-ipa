@@ -355,8 +355,6 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 
 	groupDN := entitlement.Resource.GetExternalId().Id
 
-	modifyRequest := ldap3.NewModifyRequest(groupDN, nil)
-
 	group, err := g.getGroup(ctx, groupDN)
 	if err != nil {
 		return nil, err
@@ -375,7 +373,8 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 	}
 
 	principalDNArr := []string{principalDN}
-	modifyRequest.Add(attrGroupMember, append(memberDNs, principalDNArr...))
+	modifyRequest := ldap3.NewModifyRequest(groupDN, nil)
+	modifyRequest.Add(attrGroupMember, principalDNArr)
 
 	// grant group membership to the principal
 	err = g.client.LdapModify(
