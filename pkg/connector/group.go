@@ -27,9 +27,11 @@ const (
 	attrGroupCommonName  = "cn"
 	attrGroupIdPosix     = "gidNumber"
 	attrGroupMember      = "member"
+	attrGroupManager     = "memberManager"
 	attrGroupDescription = "description"
 
-	groupMemberEntitlement = "member"
+	groupMemberEntitlement  = "member"
+	groupManagerEntitlement = "manager"
 )
 
 type groupResourceType struct {
@@ -160,7 +162,7 @@ func (g *groupResourceType) Entitlements(ctx context.Context, resource *v2.Resou
 	var rv []*v2.Entitlement
 
 	assignmentOptions := []ent.EntitlementOption{
-		ent.WithGrantableTo(resourceTypeUser),
+		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
 		ent.WithDisplayName(fmt.Sprintf("%s Group %s", resource.DisplayName, groupMemberEntitlement)),
 		ent.WithDescription(fmt.Sprintf("Access to %s group in IPA", resource.DisplayName)),
 	}
@@ -172,13 +174,20 @@ func (g *groupResourceType) Entitlements(ctx context.Context, resource *v2.Resou
 		assignmentOptions...,
 	))
 
-	// TODO: Add entitlement for group manager
+	// create manager entitlement
+	rv = append(rv, ent.NewAssignmentEntitlement(
+		resource,
+		groupManagerEntitlement,
+		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+		ent.WithDisplayName(fmt.Sprintf("%s Group %s", resource.DisplayName, groupManagerEntitlement)),
+		ent.WithDescription(fmt.Sprintf("Manage %s group in IPA", resource.DisplayName)),
+	))
 
 	return rv, "", nil, nil
 }
 
 // newGrantFromDN - create a `Grant` from a given group and user distinguished name.
-func newGrantFromDN(groupResource *v2.Resource, ipaUniqueID string, resourceType *v2.ResourceType) *v2.Grant {
+func newGrantFromDN(groupResource *v2.Resource, entitlement string, ipaUniqueID string, resourceType *v2.ResourceType) *v2.Grant {
 	grantOpts := []grant.GrantOption{}
 	if resourceType == resourceTypeGroup {
 		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
@@ -192,7 +201,7 @@ func newGrantFromDN(groupResource *v2.Resource, ipaUniqueID string, resourceType
 		&v2.Resource{
 			Id: groupResource.Id,
 		},
-		groupMemberEntitlement,
+		entitlement,
 		// remove user profile from grant so we're not saving repetitive user info in every grant
 		&v2.ResourceId{
 			ResourceType: resourceType.Id,
@@ -203,16 +212,16 @@ func newGrantFromDN(groupResource *v2.Resource, ipaUniqueID string, resourceType
 	return g
 }
 
-func newGrantFromEntry(groupResource *v2.Resource, entry *ldap3.Entry) *v2.Grant {
+func newGrantFromEntry(groupResource *v2.Resource, entry *ldap3.Entry, entitlement string) *v2.Grant {
 	ipaUniqueID := entry.GetEqualFoldAttributeValue(attrIPAUniqueID)
 
 	for _, objectClass := range entry.GetAttributeValues("objectClass") {
 		if resourceType, ok := objectClassesToResourceTypes[objectClass]; ok {
-			return newGrantFromDN(groupResource, ipaUniqueID, resourceType)
+			return newGrantFromDN(groupResource, entitlement, ipaUniqueID, resourceType)
 		}
 	}
 
-	return newGrantFromDN(groupResource, ipaUniqueID, resourceTypeUser)
+	return newGrantFromDN(groupResource, entitlement, ipaUniqueID, resourceTypeUser)
 }
 
 func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
@@ -237,19 +246,16 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 	}
 
 	memberDNs := parseValues(ldapGroup, []string{attrGroupMember})
+	managerDNs := parseValues(ldapGroup, []string{attrGroupManager})
+
+	allDNs := memberDNs.Union(managerDNs)
 
 	// create membership grants
 	var rv []*v2.Grant
-	for memberDN := range memberDNs.Iter() {
-		parsedDN, err := ldap.CanonicalizeDN(memberDN)
-		if err != nil {
-			l.Error("baton-ipa: invalid member DN", zap.String("member_dn", memberDN), zap.Error(err))
-			continue
-		}
-
+	for memberDN := range allDNs.Iter() {
 		member, _, err := g.client.LdapSearchWithStringDN(
 			ctx,
-			ldap3.ScopeWholeSubtree,
+			ldap3.ScopeBaseObject,
 			memberDN,
 			"",
 			nil,
@@ -259,20 +265,26 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 		if err != nil {
 			l.Error("baton-ipa: failed to get group member", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
 		}
-		var g *v2.Grant
-		if len(member) == 1 {
-			g = newGrantFromEntry(resource, member[0])
-		} else {
-			// Fall back to creating a grant and assuming it's for a user.
-			g = newGrantFromDN(resource, parsedDN.String(), resourceTypeUser)
+		if len(member) != 1 {
 			l.Warn("baton-ipa: member not found", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN))
-		}
-
-		if g.Id == "" {
-			l.Error("baton-ipa: failed to create grant", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
 			continue
 		}
-		rv = append(rv, g)
+
+		if memberDNs.Contains(memberDN) {
+			g := newGrantFromEntry(resource, member[0], groupMemberEntitlement)
+			if g.Id == "" {
+				l.Error("baton-ipa: failed to create member grant", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
+				continue
+			}
+			rv = append(rv, g)
+		} else {
+			g := newGrantFromEntry(resource, member[0], groupManagerEntitlement)
+			if g.Id == "" {
+				l.Error("baton-ipa: failed to create manager grant", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
+				continue
+			}
+			rv = append(rv, g)
+		}
 	}
 
 	rv = uniqueGrants(rv)
@@ -325,9 +337,10 @@ func uniqueGrants(grants []*v2.Grant) []*v2.Grant {
 	seen := make(map[string]struct{})
 	var uniqueGrants []*v2.Grant
 	for _, grant := range grants {
-		if _, ok := seen[grant.Principal.Id.Resource]; !ok {
+		key := fmt.Sprintf("%s:%s", grant.Entitlement.Id, grant.Principal.Id.Resource)
+		if _, ok := seen[key]; !ok {
 			uniqueGrants = append(uniqueGrants, grant)
-			seen[grant.Principal.Id.Resource] = struct{}{}
+			seen[key] = struct{}{}
 		}
 	}
 	return uniqueGrants
@@ -359,7 +372,12 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 		return nil, fmt.Errorf("baton-ipa: principal %s has no external ID", principal.Id.Resource)
 	}
 
-	memberDNs := group.GetEqualFoldAttributeValues(attrGroupMember)
+	targetAttr := attrGroupMember
+	if entitlement.Slug == groupManagerEntitlement {
+		targetAttr = attrGroupManager
+	}
+
+	memberDNs := group.GetEqualFoldAttributeValues(targetAttr)
 	for _, memberDN := range memberDNs {
 		if memberDN == principalDN {
 			return annotations.New(&v2.GrantAlreadyExists{}), nil
@@ -368,7 +386,7 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 
 	principalDNArr := []string{principalDN}
 	modifyRequest := ldap3.NewModifyRequest(groupDN, nil)
-	modifyRequest.Add(attrGroupMember, principalDNArr)
+	modifyRequest.Add(targetAttr, principalDNArr)
 
 	// grant group membership to the principal
 	err = g.client.LdapModify(
@@ -376,7 +394,7 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 		modifyRequest,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("baton-ipa: failed to grant group membership to user: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to grant group %s to user: %w", entitlement.DisplayName, err)
 	}
 
 	return nil, nil
@@ -403,20 +421,25 @@ func (g *groupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annota
 	}
 	principalDNArr := []string{principalDN}
 
-	alreadyRevoked := false
-	memberDNs := group.GetEqualFoldAttributeValues(attrGroupMember)
+	targetAttr := attrGroupMember
+	if entitlement.Slug == groupManagerEntitlement {
+		targetAttr = attrGroupManager
+	}
+
+	alreadyRevoked := true
+	memberDNs := group.GetEqualFoldAttributeValues(targetAttr)
 	for _, memberDN := range memberDNs {
 		if memberDN == principalDN {
-			alreadyRevoked = true
+			alreadyRevoked = false
 		}
 	}
 
-	if !alreadyRevoked {
+	if alreadyRevoked {
 		return annotations.New(&v2.GrantAlreadyRevoked{}), nil
 	}
 
 	modifyRequest := ldap3.NewModifyRequest(groupDN, nil)
-	modifyRequest.Delete(attrGroupMember, principalDNArr)
+	modifyRequest.Delete(targetAttr, principalDNArr)
 
 	// revoke group membership from the principal
 	err = g.client.LdapModify(
