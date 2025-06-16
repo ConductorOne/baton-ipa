@@ -80,16 +80,8 @@ func parseUserNames(user *ldap.Entry) (string, string, string) {
 	return firstName, lastName, displayName
 }
 
-func parseUserStatus(user *ldap.Entry, userDN *ldap3.DN) (v2.UserTrait_Status_Status, string, error) {
-	var status string
-	status = "active"
+func parseUserStatus(user *ldap.Entry, userDN *ldap3.DN) (v2.UserTrait_Status_Status, error) {
 	userStatus := v2.UserTrait_Status_STATUS_UNSPECIFIED
-
-	if containsRDN(userDN, stagedUsersDN) {
-		status = "staged"
-	} else if containsRDN(userDN, preservedUsersDN) {
-		status = "preserved"
-	}
 
 	nsAccountLockFlag := user.GetEqualFoldAttributeValue(attrNSAccountLock)
 
@@ -102,7 +94,7 @@ func parseUserStatus(user *ldap.Entry, userDN *ldap3.DN) (v2.UserTrait_Status_St
 		}
 	}
 
-	return userStatus, status, nil
+	return userStatus, nil
 }
 
 func parseUserLogin(user *ldap.Entry) (string, []string) {
@@ -191,11 +183,10 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		}
 	}
 
-	userStatus, provisionStatus, err := parseUserStatus(user, udn)
+	userStatus, err := parseUserStatus(user, udn)
 	if err != nil {
 		return nil, err
 	}
-	profile["provision_status"] = provisionStatus
 
 	// If the user status is not set, default to enabled
 	if userStatus == v2.UserTrait_Status_STATUS_UNSPECIFIED {
@@ -295,6 +286,16 @@ func (u *userResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 	var rv []*v2.Resource
 	for _, userEntry := range userEntries {
 		l.Debug("processing user", zap.String("dn", userEntry.DN))
+
+		udn, err := ldap.CanonicalizeDN(userEntry.DN)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		// Skip staged and deleted users
+		if containsRDN(udn, stagedUsersDN) || containsRDN(udn, preservedUsersDN) {
+			continue
+		}
+
 		ur, err := userResource(ctx, userEntry)
 		if err != nil {
 			return nil, pageToken, nil, err
