@@ -149,11 +149,11 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
 	}
 
-	memberDNs := parseValues(ldapHostGroup, []string{attrHostGroupMember, attrHostGroupManager})
+	members := parseValues(ldapHostGroup, []string{attrHostGroupMember, attrHostGroupManager})
 
 	// create grants
 	var rv []*v2.Grant
-	for memberDN := range memberDNs.Iter() {
+	for memberDN := range members.Iter() {
 		_, err := ldap.CanonicalizeDN(memberDN)
 		if err != nil {
 			l.Error("baton-ipa: invalid member DN", zap.String("member_dn", memberDN), zap.Error(err))

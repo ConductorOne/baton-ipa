@@ -245,14 +245,14 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list group %s members: %w", resource.Id.Resource, err)
 	}
 
-	memberDNs := parseValues(ldapGroup, []string{attrGroupMember})
-	managerDNs := parseValues(ldapGroup, []string{attrGroupManager})
+	members := parseValues(ldapGroup, []string{attrGroupMember})
+	managers := parseValues(ldapGroup, []string{attrGroupManager})
 
-	allDNs := memberDNs.Union(managerDNs)
+	allMembers := members.Union(managers)
 
 	// create membership grants
 	var rv []*v2.Grant
-	for memberDN := range allDNs.Iter() {
+	for memberDN := range allMembers.Iter() {
 		member, _, err := g.client.LdapSearchWithStringDN(
 			ctx,
 			ldap3.ScopeBaseObject,
@@ -270,7 +270,7 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 			continue
 		}
 
-		if memberDNs.Contains(memberDN) {
+		if members.Contains(memberDN) {
 			g := newGrantFromEntry(resource, member[0], groupMemberEntitlement)
 			if g.Id == "" {
 				l.Error("baton-ipa: failed to create member grant", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
@@ -377,8 +377,8 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 		targetAttr = attrGroupManager
 	}
 
-	memberDNs := group.GetEqualFoldAttributeValues(targetAttr)
-	for _, memberDN := range memberDNs {
+	members := group.GetEqualFoldAttributeValues(targetAttr)
+	for _, memberDN := range members {
 		if memberDN == principalDN {
 			return annotations.New(&v2.GrantAlreadyExists{}), nil
 		}
@@ -427,8 +427,8 @@ func (g *groupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annota
 	}
 
 	alreadyRevoked := true
-	memberDNs := group.GetEqualFoldAttributeValues(targetAttr)
-	for _, memberDN := range memberDNs {
+	members := group.GetEqualFoldAttributeValues(targetAttr)
+	for _, memberDN := range members {
 		if memberDN == principalDN {
 			alreadyRevoked = false
 		}

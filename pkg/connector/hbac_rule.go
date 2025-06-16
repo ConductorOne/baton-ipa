@@ -170,11 +170,11 @@ func (r *hbacRuleResourceType) Grants(ctx context.Context, resource *v2.Resource
 		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rule %s members: %w", resource.Id.Resource, err)
 	}
 
-	memberDNs := parseValues(ldapHbacRule, []string{attrHBACRuleMemberUser, attrHBACRuleMemberHost})
+	members := parseValues(ldapHbacRule, []string{attrHBACRuleMemberUser, attrHBACRuleMemberHost})
 
 	// create grants
 	var rv []*v2.Grant
-	for memberDN := range memberDNs.Iter() {
+	for memberDN := range members.Iter() {
 		_, err := ldap.CanonicalizeDN(memberDN)
 		if err != nil {
 			l.Error("baton-ipa: invalid member DN", zap.String("member_dn", memberDN), zap.Error(err))
