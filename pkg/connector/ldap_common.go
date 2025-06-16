@@ -5,4 +5,5 @@ const (
 	ipaUniqueIDFilter   = "(ipaUniqueID=%s)"
 
 	attrIPAUniqueID = "ipaUniqueID"
+	attrCommonName  = "cn"
 )
