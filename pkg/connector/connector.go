@@ -72,7 +72,7 @@ func (l *LDAP) Validate(ctx context.Context) (annotations.Annotations, error) {
 		1,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("ipa-connector: failed to validate connection: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to validate connection: %w", err)
 	}
 	return nil, nil
 }

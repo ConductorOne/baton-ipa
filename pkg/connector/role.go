@@ -83,7 +83,7 @@ func (r *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 		ResourcesPageSize,
 	)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ipa-connector: failed to list roles: %w", err)
+		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list roles: %w", err)
 	}
 
 	pageToken, err := bag.NextToken(nextPage)
@@ -129,7 +129,7 @@ func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 	l := ctxzap.Extract(ctx)
 	roleDN, err := ldap.CanonicalizeDN(resource.Id.Resource)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ipa-connector: invalid group DN: '%s' in group grants: %w", resource.Id.Resource, err)
+		return nil, "", nil, fmt.Errorf("baton-ipa: invalid group DN: '%s' in group grants: %w", resource.Id.Resource, err)
 	}
 	l = l.With(zap.Stringer("role_dn", roleDN))
 
@@ -140,7 +140,7 @@ func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 		nil,
 	)
 	if err != nil {
-		err := fmt.Errorf("ipa-connector: failed to list role members: %w", err)
+		err := fmt.Errorf("baton-ipa: failed to list role members: %w", err)
 		l.Error("failed to get role object", zap.Error(err))
 		return nil, "", nil, err
 	}
@@ -150,12 +150,12 @@ func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 	for dn := range members.Iter() {
 		dnx, err := ldap.CanonicalizeDN(dn)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("ipa-connector: invalid DN in role_members: '%s': %w", dn, err)
+			return nil, "", nil, fmt.Errorf("baton-ipa: invalid DN in role_members: '%s': %w", dn, err)
 		}
 
 		urId, err := rs.NewResourceID(resourceTypeUser, dnx.String())
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("ipa-connector: failed to find user with dn %s", dn)
+			return nil, "", nil, fmt.Errorf("baton-ipa: failed to find user with dn %s", dn)
 		}
 		rv = append(
 			rv,
@@ -187,7 +187,7 @@ func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, en
 		modifyRequest,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("ipa-connector: failed to grant role membership to user: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to grant role membership to user: %w", err)
 	}
 
 	return nil, nil
@@ -219,7 +219,7 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 				return nil, nil
 			}
 		}
-		return nil, fmt.Errorf("ipa-connector: failed to revoke role membership from user: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to revoke role membership from user: %w", err)
 	}
 
 	return nil, nil

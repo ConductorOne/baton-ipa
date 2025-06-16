@@ -284,7 +284,7 @@ func (u *userResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 		ResourcesPageSize,
 	)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ipa-connector: failed to list users: %w", err)
+		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list users: %w", err)
 	}
 
 	pageToken, err := bag.NextToken(nextPage)
@@ -313,23 +313,23 @@ func (u *userResourceType) Get(ctx context.Context, resourceId *v2.ResourceId, p
 
 	userDN, err := ldap.CanonicalizeDN(resourceId.Resource)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ipa-connector: failed to canonicalize user DN: %w", err)
+		return nil, nil, fmt.Errorf("baton-ipa: failed to canonicalize user DN: %w", err)
 	}
 
 	userEntries, _, err := u.client.LdapSearch(ctx, ldap3.ScopeBaseObject, userDN, userFilter, allAttrs, "", ResourcesPageSize)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ipa-connector: failed to get user: %w", err)
+		return nil, nil, fmt.Errorf("baton-ipa: failed to get user: %w", err)
 	}
 
 	if len(userEntries) == 0 {
-		return nil, nil, fmt.Errorf("ipa-connector: user not found")
+		return nil, nil, fmt.Errorf("baton-ipa: user not found")
 	}
 
 	userEntry := userEntries[0]
 
 	ur, err := userResource(ctx, userEntry)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ipa-connector: failed to get user: %w", err)
+		return nil, nil, fmt.Errorf("baton-ipa: failed to get user: %w", err)
 	}
 
 	return ur, nil, nil
@@ -342,13 +342,13 @@ func (u *userResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId
 
 	userDN, err := ldap.CanonicalizeDN(resourceId.Resource)
 	if err != nil {
-		return nil, fmt.Errorf("ipa-connector: failed to canonicalize user DN: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to canonicalize user DN: %w", err)
 	}
 
 	deleteRequest := &ldap3.DelRequest{DN: userDN.String()}
 	err = u.client.LdapDelete(ctx, deleteRequest)
 	if err != nil {
-		return nil, fmt.Errorf("ipa-connector: failed to delete user: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to delete user: %w", err)
 	}
 
 	return nil, nil
