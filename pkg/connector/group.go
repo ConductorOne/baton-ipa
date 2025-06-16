@@ -343,9 +343,8 @@ func (g *groupResourceType) getGroup(ctx context.Context, groupDN string) (*ldap
 }
 
 func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	// TODO: Add support for group grants
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ipa: only users can have group membership granted")
+	if principal.Id.ResourceType != resourceTypeUser.Id && principal.Id.ResourceType != resourceTypeGroup.Id {
+		return nil, fmt.Errorf("baton-ipa: only users and groups can have group membership granted")
 	}
 
 	groupDN := entitlement.Resource.GetExternalId().Id
@@ -387,8 +386,8 @@ func (g *groupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annota
 	entitlement := grant.Entitlement
 	principal := grant.Principal
 
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ipa: only users can have group membership revoked")
+	if principal.Id.ResourceType != resourceTypeUser.Id && principal.Id.ResourceType != resourceTypeGroup.Id {
+		return nil, fmt.Errorf("baton-ipa: only users and groups can have group membership revoked")
 	}
 
 	groupDN := entitlement.Resource.GetExternalId().Id
