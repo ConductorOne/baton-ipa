@@ -23,16 +23,16 @@ import (
 // InetOrgPerson resource structure
 // https://datatracker.ietf.org/doc/html/rfc2798
 const (
-	userFilter            = "(&(objectClass=posixAccount)" + excludeCompatFilter + ")"
-	attrUserUID           = "uid"
-	attrUserCommonName    = "cn"
-	attrFirstName         = "givenName"
-	attrLastName          = "sn"
-	attrUserMail          = "mail"
-	attrUserDisplayName   = "displayName"
-	attrUserCreatedAt     = "createTimestamp"
-	attrUserAuthTimestamp = "authTimestamp"
-	attrNSAccountLock     = "nsAccountLock"
+	userFilter          = "(&(objectClass=posixAccount)" + excludeCompatFilter + ")"
+	attrUserUID         = "uid"
+	attrUserCommonName  = "cn"
+	attrFirstName       = "givenName"
+	attrLastName        = "sn"
+	attrUserMail        = "mail"
+	attrUserDisplayName = "displayName"
+	attrUserCreatedAt   = "createTimestamp"
+	attrUserLastLogin   = "krblastsuccessfulauth"
+	attrNSAccountLock   = "nsAccountLock"
 )
 
 var allAttrs = []string{"*", "+"}
@@ -227,7 +227,10 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 	}
 
 	// This might not be supported by FreeIPA
-	lastLogin, _ := parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserAuthTimestamp))
+	lastLogin, err := parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserLastLogin))
+	if err != nil {
+		l.Warn("baton-ipa: failed to parse user last login", zap.String("user_dn", userDN), zap.Error(err), zap.String("last_login", user.GetEqualFoldAttributeValue(attrUserLastLogin)))
+	}
 	if lastLogin != nil {
 		userTraitOptions = append(userTraitOptions, rs.WithLastLogin(*lastLogin))
 	}
@@ -237,7 +240,7 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		displayName = userId
 	}
 
-	l.Debug("creating user resource", zap.String("display_name", displayName), zap.String("user_id", userId), zap.String("user_dn", userDN))
+	l.Debug("baton-ipa:creating user resource", zap.String("display_name", displayName), zap.String("user_id", userId), zap.String("user_dn", userDN))
 
 	resource, err := rs.NewUserResource(
 		displayName,
