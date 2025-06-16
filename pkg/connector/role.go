@@ -236,13 +236,13 @@ func newRoleGrantFromDN(roleResource *v2.Resource, ipaUniqueID string, resourceT
 }
 
 func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ipa: only users can have role membership granted")
-	}
+	// if principal.Id.ResourceType != resourceTypeUser.Id {
+	// 	return nil, fmt.Errorf("baton-ipa: only users can have role membership granted")
+	// }
 
-	roleDN := entitlement.Resource.Id.Resource
+	roleDN := entitlement.Resource.GetExternalId().Id
 
-	principalDNArr := []string{principal.Id.Resource}
+	principalDNArr := []string{principal.GetExternalId().Id}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Add(attrRoleMember, principalDNArr)
 
