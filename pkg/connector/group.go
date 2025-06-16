@@ -162,7 +162,7 @@ func (g *groupResourceType) Entitlements(ctx context.Context, resource *v2.Resou
 	assignmentOptions := []ent.EntitlementOption{
 		ent.WithGrantableTo(resourceTypeUser),
 		ent.WithDisplayName(fmt.Sprintf("%s Group %s", resource.DisplayName, groupMemberEntitlement)),
-		ent.WithDescription(fmt.Sprintf("Access to %s group in LDAP", resource.DisplayName)),
+		ent.WithDescription(fmt.Sprintf("Access to %s group in IPA", resource.DisplayName)),
 	}
 
 	// create membership entitlement

@@ -2,17 +2,28 @@ package connector
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/conductorone/baton-ipa/pkg/ldap"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grant "github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	ldap3 "github.com/go-ldap/ldap/v3"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
+	hostGroupMembershipEntitlement = "member"
+
 	hostGroupFilter = "(&(objectClass=ipahostgroup))"
+
+	attrHostGroupMember = "member"
 )
 
 type hostGroupResourceType struct {
@@ -89,11 +100,164 @@ func (r *hostGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *
 }
 
 func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+	var rv []*v2.Entitlement
+
+	assignmentOptions := []ent.EntitlementOption{
+		ent.WithGrantableTo(resourceTypeHost, resourceTypeHostGroup),
+		ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMembershipEntitlement)),
+		ent.WithDescription(fmt.Sprintf("Access to %s host group in IPA", resource.DisplayName)),
+	}
+
+	// create membership entitlement
+	rv = append(rv, ent.NewAssignmentEntitlement(
+		resource,
+		hostGroupMembershipEntitlement,
+		assignmentOptions...,
+	))
+
+	return rv, "", nil, nil
 }
 
 func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+	l := ctxzap.Extract(ctx)
+
+	externalId := resource.GetExternalId()
+	if externalId == nil {
+		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
+	}
+
+	hostGroupDN, err := ldap.CanonicalizeDN(externalId.Id)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
+	}
+	l = l.With(zap.Stringer("host_group_dn", hostGroupDN))
+
+	var ldapHostGroup *ldap3.Entry
+	ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, externalId)
+	if err != nil {
+		l.Error("baton-ipa: failed to list host group members", zap.String("host_group_dn", resource.Id.Resource), zap.Error(err))
+		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
+	}
+
+	memberDNs := parseValues(ldapHostGroup, []string{attrHostGroupMember})
+
+	// create grants
+	var rv []*v2.Grant
+	for memberDN := range memberDNs.Iter() {
+		_, err := ldap.CanonicalizeDN(memberDN)
+		if err != nil {
+			l.Error("baton-ipa: invalid member DN", zap.String("member_dn", memberDN), zap.Error(err))
+			continue
+		}
+
+		member, _, err := r.client.LdapSearchWithStringDN(
+			ctx,
+			ldap3.ScopeBaseObject,
+			memberDN,
+			"",
+			nil,
+			"",
+			1,
+		)
+		if err != nil {
+			l.Error("baton-ipa: failed to get host group member", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
+			continue
+		}
+		var g *v2.Grant
+		if len(member) == 1 {
+			g = newHostGroupGrantFromEntry(resource, member[0])
+		} else {
+			l.Warn("baton-ipa: member not found", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
+		}
+
+		if g.Id == "" {
+			l.Error("baton-ipa: failed to create grant", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
+			continue
+		}
+		rv = append(rv, g)
+	}
+
+	rv = uniqueGrants(rv)
+
+	return rv, "", nil, nil
+}
+
+func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l *zap.Logger, resourceId *v2.ResourceId, externalId *v2.ExternalId) (*ldap3.Entry, error) {
+	hostGroupDN := externalId.Id
+	ldapRule, err := r.client.LdapGetWithStringDN(
+		ctx,
+		hostGroupDN,
+		hostGroupFilter,
+		nil,
+	)
+	if err == nil {
+		return ldapRule, nil
+	}
+
+	if ldap3.IsErrorAnyOf(err, ldap3.LDAPResultNoSuchObject) {
+		filter := fmt.Sprintf(ipaUniqueIDFilter, resourceId.Resource)
+		ldapRules, _, err := r.client.LdapSearch(
+			ctx,
+			ldap3.ScopeWholeSubtree,
+			r.baseDN,
+			filter,
+			nil,
+			"",
+			2,
+		)
+		if err != nil {
+			l.Error("baton-ipa: failed to get host group", zap.String("host_group_dn", hostGroupDN), zap.Error(err))
+			return nil, err
+		}
+		if len(ldapRules) == 0 {
+			notFoundError := status.Errorf(codes.NotFound, "baton-ipa: no such object")
+			return nil, notFoundError
+		}
+		if len(ldapRules) > 1 {
+			l.Error("baton-ipa: multiple host groups found", zap.String("host_group_dn", hostGroupDN), zap.Error(err))
+			return nil, fmt.Errorf("baton-ipa: multiple host groups found")
+		}
+		return ldapRules[0], nil
+	}
+
+	return nil, err
+}
+
+func newHostGroupGrantFromEntry(hostGroupResource *v2.Resource, entry *ldap3.Entry) *v2.Grant {
+	ipaUniqueID := entry.GetEqualFoldAttributeValue(attrIPAUniqueID)
+
+	for _, objectClass := range entry.GetAttributeValues("objectClass") {
+		if resourceType, ok := objectClassesToResourceTypes[objectClass]; ok {
+			return newHostGroupGrantFromDN(hostGroupResource, ipaUniqueID, resourceType)
+		}
+	}
+
+	return newHostGroupGrantFromDN(hostGroupResource, ipaUniqueID, resourceTypeHost)
+}
+
+func newHostGroupGrantFromDN(hostGroupResource *v2.Resource, ipaUniqueID string, resourceType *v2.ResourceType) *v2.Grant {
+	grantOpts := []grant.GrantOption{}
+	if resourceType == resourceTypeHostGroup {
+		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
+			EntitlementIds: []string{
+				fmt.Sprintf("host_group:%s:member", ipaUniqueID),
+			},
+		}))
+	}
+	g := grant.NewGrant(
+		// remove group profile from grant so we're not saving all group memberships in every grant
+		&v2.Resource{
+			Id: hostGroupResource.Id,
+		},
+		groupMemberEntitlement,
+		// remove user profile from grant so we're not saving repetitive user info in every grant
+		&v2.ResourceId{
+			ResourceType: resourceType.Id,
+			Resource:     ipaUniqueID,
+		},
+		grantOpts...,
+	)
+	return g
 }
 
 func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN) *hostGroupResourceType {

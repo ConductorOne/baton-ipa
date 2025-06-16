@@ -50,6 +50,7 @@ var (
 		Traits: []v2.ResourceType_Trait{
 			v2.ResourceType_TRAIT_UNSPECIFIED,
 		},
+		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}),
 	}
 	resourceTypeHostGroup = &v2.ResourceType{
 		Id:          "host_group",
