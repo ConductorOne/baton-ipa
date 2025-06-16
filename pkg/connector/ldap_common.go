@@ -16,4 +16,5 @@ var objectClassesToResourceTypes = map[string]*v2.ResourceType{
 	"ipausergroup": resourceTypeGroup,
 	"posixaccount": resourceTypeUser,
 	"ipahost":      resourceTypeHost,
+	"ipahostgroup": resourceTypeHostGroup,
 }
