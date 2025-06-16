@@ -44,6 +44,13 @@ var (
 			v2.ResourceType_TRAIT_ROLE,
 		},
 	}
+	resourceTypeHost = &v2.ResourceType{
+		Id:          "host",
+		DisplayName: "Host",
+		Traits: []v2.ResourceType_Trait{
+			v2.ResourceType_TRAIT_UNSPECIFIED,
+		},
+	}
 )
 
 type LDAP struct {
@@ -57,6 +64,7 @@ func (l *LDAP) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceS
 		groupBuilder(l.client, l.config.GroupSearchDN, l.config.UserSearchDN),
 		roleBuilder(l.client, l.config.RoleSearchDN),
 		hbacRuleBuilder(l.client, l.config.BaseDN),
+		hostBuilder(l.client, l.config.BaseDN),
 	}
 }
 
