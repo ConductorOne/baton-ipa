@@ -202,6 +202,7 @@ func (r *hbacRuleResourceType) Grants(ctx context.Context, resource *v2.Resource
 			}
 		} else {
 			l.Warn("baton-ipa: member not found", zap.String("hbac_rule_dn", hbacRuleDN.String()), zap.String("member_dn", memberDN))
+			continue
 		}
 
 		if g.Id == "" {
