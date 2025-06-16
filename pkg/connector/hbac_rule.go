@@ -128,14 +128,14 @@ func (r *hbacRuleResourceType) Entitlements(ctx context.Context, resource *v2.Re
 
 	assignmentOptions := []ent.EntitlementOption{
 		ent.WithGrantableTo(resourceTypeUser),
-		ent.WithDisplayName(fmt.Sprintf("%s Permission", resource.DisplayName)),
+		ent.WithDisplayName(fmt.Sprintf("%s Permission %s", resource.DisplayName, permissionAssignmentEntitlementName)),
 		ent.WithDescription(fmt.Sprintf("Access to %s permission", resource.DisplayName)),
 	}
 
 	// create membership entitlement
 	rv = append(rv, ent.NewAssignmentEntitlement(
 		resource,
-		roleMemberEntitlement,
+		permissionAssignmentEntitlementName,
 		assignmentOptions...,
 	))
 
