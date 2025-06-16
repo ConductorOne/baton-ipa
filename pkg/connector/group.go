@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 
 	"github.com/conductorone/baton-ipa/pkg/ldap"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -13,10 +12,13 @@ import (
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grant "github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
+
 	ldap3 "github.com/go-ldap/ldap/v3"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var objectClassesToResourceTypes = map[string]*v2.ResourceType{
@@ -25,20 +27,19 @@ var objectClassesToResourceTypes = map[string]*v2.ResourceType{
 }
 
 const (
-	groupFilter = "(&(objectClass=ipausergroup)" + excludeCompatFilter + ")"
+	groupFilter     = "(&(objectClass=ipausergroup)" + excludeCompatFilter + ")"
+	groupByIDFilter = `(&(objectClass=ipausergroup)(ipaUniqueID=%s)` + excludeCompatFilter + `)`
 
 	groupMemberUIDFilter        = `(&` + userFilter + `(uid=%s))`
 	groupMemberCommonNameFilter = `(&` + userFilter + `(cn=%s))`
 
 	groupMemberGidNumber = `(&` + userFilter + `(gidNumber=%s))`
 
-	attrGroupCommonName   = "cn"
-	attrGroupIdPosix      = "gidNumber"
-	attrGroupMember       = "member"
-	attrGroupUniqueMember = "uniqueMember"
-	attrGroupMemberPosix  = "memberUid"
-	attrGroupDescription  = "description"
-	attrGroupObjectGUID   = "objectGUID"
+	attrGroupCommonName  = "cn"
+	attrGroupIdPosix     = "gidNumber"
+	attrGroupMember      = "member"
+	attrGroupDescription = "description"
+	attrGroupObjectGUID  = "objectGUID"
 
 	groupMemberEntitlement = "member"
 )
@@ -48,9 +49,6 @@ type groupResourceType struct {
 	groupSearchDN *ldap3.DN
 	userSearchDN  *ldap3.DN
 	client        *ldap.Client
-
-	uid2dnCache map[string]string
-	uid2dnMtx   sync.Mutex
 }
 
 func (g *groupResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -150,12 +148,9 @@ func (g *groupResourceType) Get(ctx context.Context, resourceId *v2.ResourceId, 
 
 	l.Debug("getting group", zap.String("resource_id", resourceId.Resource))
 
-	groupDN, err := ldap.CanonicalizeDN(resourceId.Resource)
-	if err != nil {
-		return nil, nil, fmt.Errorf("ipa-connector: failed to canonicalize group DN: %w", err)
-	}
+	filter := fmt.Sprintf(groupByIDFilter, resourceId.Resource)
 
-	groupEntries, _, err := g.client.LdapSearch(ctx, ldap3.ScopeBaseObject, groupDN, groupFilter, allAttrs, "", ResourcesPageSize)
+	groupEntries, _, err := g.client.LdapSearch(ctx, ldap3.ScopeWholeSubtree, g.groupSearchDN, filter, allAttrs, "", ResourcesPageSize)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ipa-connector: failed to get group: %w", err)
 	}
@@ -190,16 +185,18 @@ func (g *groupResourceType) Entitlements(ctx context.Context, resource *v2.Resou
 		assignmentOptions...,
 	))
 
+	// TODO: Add entitlement for group manager
+
 	return rv, "", nil, nil
 }
 
 // newGrantFromDN - create a `Grant` from a given group and user distinguished name.
-func newGrantFromDN(groupResource *v2.Resource, dn string, resourceType *v2.ResourceType) *v2.Grant {
+func newGrantFromDN(groupResource *v2.Resource, ipaUniqueID string, resourceType *v2.ResourceType) *v2.Grant {
 	grantOpts := []grant.GrantOption{}
 	if resourceType == resourceTypeGroup {
 		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
 			EntitlementIds: []string{
-				fmt.Sprintf("group:%s:member", dn),
+				fmt.Sprintf("group:%s:member", ipaUniqueID),
 			},
 		}))
 	}
@@ -212,7 +209,7 @@ func newGrantFromDN(groupResource *v2.Resource, dn string, resourceType *v2.Reso
 		// remove user profile from grant so we're not saving repetitive user info in every grant
 		&v2.ResourceId{
 			ResourceType: resourceType.Id,
-			Resource:     dn,
+			Resource:     ipaUniqueID,
 		},
 		grantOpts...,
 	)
@@ -220,21 +217,15 @@ func newGrantFromDN(groupResource *v2.Resource, dn string, resourceType *v2.Reso
 }
 
 func newGrantFromEntry(groupResource *v2.Resource, entry *ldap3.Entry) *v2.Grant {
-	var dn string
-	parsedDN, err := ldap.CanonicalizeDN(entry.DN)
-	if err == nil {
-		dn = parsedDN.String()
-	} else {
-		dn = entry.DN
-	}
+	ipaUniqueID := entry.GetEqualFoldAttributeValue(attrIPAUniqueID)
 
 	for _, objectClass := range entry.GetAttributeValues("objectClass") {
 		if resourceType, ok := objectClassesToResourceTypes[objectClass]; ok {
-			return newGrantFromDN(groupResource, dn, resourceType)
+			return newGrantFromDN(groupResource, ipaUniqueID, resourceType)
 		}
 	}
 
-	return newGrantFromDN(groupResource, dn, resourceTypeUser)
+	return newGrantFromDN(groupResource, ipaUniqueID, resourceTypeUser)
 }
 
 func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
@@ -245,111 +236,56 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 		return nil, "", nil, fmt.Errorf("ldap-connector: group %s has no external ID", resource.Id.Resource)
 	}
 
-	groupDN, err := ldap.CanonicalizeDN(resource.Id.Resource)
+	groupDN, err := ldap.CanonicalizeDN(externalId.Id)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("ipa-connector: invalid group DN: '%s' in group grants: %w", resource.Id.Resource, err)
 	}
 	l = l.With(zap.Stringer("group_dn", groupDN))
 
 	var ldapGroup *ldap3.Entry
-	externalId := resource.GetExternalId()
-	if externalId == nil {
-		ldapGroup, err = g.client.LdapGet(
-			ctx,
-			groupDN,
-			groupFilter,
-			nil,
-		)
-	} else {
-		ldapGroup, err = g.getGroupWithFallback(ctx, l, groupDN, externalId)
-	}
-
+	ldapGroup, err = g.getGroupWithFallback(ctx, l, resource.Id, externalId)
 	if err != nil {
 		l.Error("ipa-connector: failed to list group members", zap.String("group_dn", resource.Id.Resource), zap.Error(err))
-
-		// Some LDAP servers lie and return a group DN that doesn't actually exist.
-		// Or the group got deleted between List() and Grants().
-		if ldap3.IsErrorAnyOf(err, ldap3.LDAPResultNoSuchObject) {
-			return nil, "", nil, nil
-		}
-
-		err := fmt.Errorf("ipa-connector: failed to list group %s members: %w", resource.Id.Resource, err)
-		return nil, "", nil, err
+		return nil, "", nil, fmt.Errorf("ipa-connector: failed to list group %s members: %w", resource.Id.Resource, err)
 	}
 
-	memberIDs := parseValues(ldapGroup, []string{attrGroupUniqueMember, attrGroupMember, attrGroupMemberPosix})
+	memberDNs := parseValues(ldapGroup, []string{attrGroupMember})
 
 	// create membership grants
 	var rv []*v2.Grant
-	for memberId := range memberIDs.Iter() {
-		parsedDN, err := ldap.CanonicalizeDN(memberId)
-		if err == nil {
-			member, _, err := g.client.LdapSearch(
-				ctx,
-				ldap3.ScopeWholeSubtree,
-				parsedDN,
-				"",
-				nil,
-				"",
-				1,
-			)
-			if err != nil {
-				l.Error("ipa-connector: failed to get group member", zap.String("group", groupDN.String()), zap.String("member_id", memberId), zap.Error(err))
-			}
-			var g *v2.Grant
-			if len(member) == 1 {
-				g = newGrantFromEntry(resource, member[0])
-			} else {
-				// Fall back to creating a grant and assuming it's for a user.
-				g = newGrantFromDN(resource, parsedDN.String(), resourceTypeUser)
-			}
-			rv = append(rv, g)
-			continue
-		}
-
-		memberDN, err := g.findMember(ctx, memberId)
+	for memberDN := range memberDNs.Iter() {
+		parsedDN, err := ldap.CanonicalizeDN(memberDN)
 		if err != nil {
-			return nil, "", nil, err
-		}
-		if memberDN == "" {
+			l.Error("ipa-connector: invalid member DN", zap.String("member_dn", memberDN), zap.Error(err))
 			continue
 		}
-		g := newGrantFromDN(resource, memberDN, resourceTypeUser)
-		rv = append(rv, g)
-	}
 
-	posixGid := ldapGroup.GetEqualFoldAttributeValue(attrGroupIdPosix)
-	if posixGid == "" {
-		return rv, "", nil, nil
-	}
-
-	nextPage := ""
-	for {
-		var userEntries []*ldap3.Entry
-		userEntries, nextPage, err = g.client.LdapSearch(
+		member, _, err := g.client.LdapSearchWithStringDN(
 			ctx,
 			ldap3.ScopeWholeSubtree,
-			g.userSearchDN,
-			fmt.Sprintf(groupMemberGidNumber, ldap3.EscapeFilter(posixGid)),
-			[]string{"dn"},
-			nextPage,
-			ResourcesPageSize,
+			memberDN,
+			"",
+			nil,
+			"",
+			1,
 		)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("ipa-connector: failed to list group members: %w", err)
+			l.Error("ipa-connector: failed to get group member", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
 		}
-		for _, userEntry := range userEntries {
-			userDN, err := ldap.CanonicalizeDN(userEntry.DN)
-			if err != nil {
-				l.Error("ipa-connector: invalid user DN", zap.String("user_dn", userEntry.DN), zap.Error(err))
-				continue
-			}
-			g := newGrantFromDN(resource, userDN.String(), resourceTypeUser)
-			rv = append(rv, g)
+		var g *v2.Grant
+		if len(member) == 1 {
+			g = newGrantFromEntry(resource, member[0])
+		} else {
+			// Fall back to creating a grant and assuming it's for a user.
+			g = newGrantFromDN(resource, parsedDN.String(), resourceTypeUser)
+			l.Warn("ipa-connector: multiple members found", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN))
 		}
-		if nextPage == "" {
-			break
+
+		if g.Id == "" {
+			l.Error("ipa-connector: failed to create grant", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
+			continue
 		}
+		rv = append(rv, g)
 	}
 
 	rv = uniqueGrants(rv)
@@ -357,25 +293,45 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 	return rv, "", nil, nil
 }
 
-func (g *groupResourceType) getGroupWithFallback(ctx context.Context, l *zap.Logger, groupDN *ldap3.DN, externalId *v2.ExternalId) (*ldap3.Entry, error) {
+func (g *groupResourceType) getGroupWithFallback(ctx context.Context, l *zap.Logger, resourceId *v2.ResourceId, externalId *v2.ExternalId) (*ldap3.Entry, error) {
+	groupDN := externalId.Id
 	ldapGroup, err := g.client.LdapGetWithStringDN(
 		ctx,
-		externalId.Id,
+		groupDN,
 		groupFilter,
 		nil,
 	)
-
-	if err != nil && ldap3.IsErrorAnyOf(err, ldap3.LDAPResultNoSuchObject) {
-		l.Info("ipa-connector: failed to get group by raw DN, using fallback", zap.String("raw_dn", externalId.Id), zap.Error(err))
-		return g.client.LdapGet(
-			ctx,
-			groupDN,
-			groupFilter,
-			nil,
-		)
+	if err == nil {
+		return ldapGroup, nil
 	}
 
-	return ldapGroup, err
+	if ldap3.IsErrorAnyOf(err, ldap3.LDAPResultNoSuchObject) {
+		filter := fmt.Sprintf(ipaUniqueIDFilter, resourceId.Resource)
+		ldapGroups, _, err := g.client.LdapSearch(
+			ctx,
+			ldap3.ScopeWholeSubtree,
+			g.groupSearchDN,
+			filter,
+			nil,
+			"",
+			2,
+		)
+		if err != nil {
+			l.Error("ipa-connector: failed to get group", zap.String("group_dn", groupDN), zap.Error(err))
+			return nil, err
+		}
+		if len(ldapGroups) == 0 {
+			notFoundError := status.Errorf(codes.NotFound, "baton-ipa: no such object")
+			return nil, notFoundError
+		}
+		if len(ldapGroups) > 1 {
+			l.Error("ipa-connector: multiple groups found", zap.String("group_dn", groupDN), zap.Error(err))
+			return nil, fmt.Errorf("ipa-connector: multiple groups found")
+		}
+		return ldapGroups[0], nil
+	}
+
+	return nil, err
 }
 
 func uniqueGrants(grants []*v2.Grant) []*v2.Grant {
@@ -388,83 +344,6 @@ func uniqueGrants(grants []*v2.Grant) []*v2.Grant {
 		}
 	}
 	return uniqueGrants
-}
-
-// findMember: note this function can return an empty string if the member is not found.
-func (g *groupResourceType) findMember(ctx context.Context, memberId string) (string, error) {
-	g.uid2dnMtx.Lock()
-	if dn, ok := g.uid2dnCache[memberId]; ok {
-		g.uid2dnMtx.Unlock()
-		return dn, nil
-	}
-	g.uid2dnMtx.Unlock()
-
-	filter := fmt.Sprintf(groupMemberUIDFilter, ldap3.EscapeFilter(memberId))
-	dn, err := g.findMemberByFilter(ctx, memberId, filter)
-	if err != nil {
-		return "", err
-	}
-	if dn != "" {
-		return dn, nil
-	}
-
-	filter = fmt.Sprintf(groupMemberCommonNameFilter, ldap3.EscapeFilter(memberId))
-	dn, err = g.findMemberByFilter(ctx, memberId, filter)
-	if err != nil {
-		return "", err
-	}
-	if dn != "" {
-		return dn, nil
-	}
-	return "", nil
-}
-
-func (g *groupResourceType) findMemberByFilter(ctx context.Context, memberId string, filter string) (string, error) {
-	l := ctxzap.Extract(ctx)
-
-	memberEntry, _, err := g.client.LdapSearch(
-		ctx,
-		ldap3.ScopeWholeSubtree,
-		g.userSearchDN,
-		filter,
-		nil,
-		"",
-		1,
-	)
-
-	if err != nil {
-		l.Error("ipa-connector: expanding group: failed to get user", zap.String("member_id", memberId), zap.Error(err))
-		// returns err, since this is a network error
-		return "", err
-	}
-
-	if len(memberEntry) == 0 {
-		l.Error("ipa-connector: expanding group: failed to find user", zap.String("member_id", memberId), zap.String("search_filter", filter))
-		return "", nil
-	}
-
-	if len(memberEntry) > 1 {
-		err := fmt.Errorf("multiple users found by search")
-		l.Error("ipa-connector: expanding group: multiple users found by search", zap.String("member_id", memberId), zap.String("search_filter", filter))
-		// note: returning error since this feels like a
-		// developer error?
-		return "", err
-	}
-
-	mem := memberEntry[0]
-	memDN, err := ldap.CanonicalizeDN(mem.DN)
-	if err != nil {
-		l.Error("ipa-connector: expanding group: invalid DN", zap.String("member_id", memberId), zap.String("search_filter", filter), zap.Error(err), zap.String("member_dn", mem.DN))
-		// note: returning error since this feels like a
-		// developer error?
-		return "", err
-	}
-
-	memberDN := memDN.String()
-	g.uid2dnMtx.Lock()
-	g.uid2dnCache[memberId] = memberDN
-	g.uid2dnMtx.Unlock()
-	return memberDN, nil
 }
 
 func (g *groupResourceType) getGroup(ctx context.Context, groupDN string) (*ldap3.Entry, error) {
@@ -589,6 +468,5 @@ func groupBuilder(client *ldap.Client, groupSearchDN *ldap3.DN,
 		userSearchDN:  userSearchDN,
 		resourceType:  resourceTypeGroup,
 		client:        client,
-		uid2dnCache:   make(map[string]string),
 	}
 }
