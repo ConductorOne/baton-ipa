@@ -236,10 +236,6 @@ func newRoleGrantFromDN(roleResource *v2.Resource, ipaUniqueID string, resourceT
 }
 
 func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	// if principal.Id.ResourceType != resourceTypeUser.Id {
-	// 	return nil, fmt.Errorf("baton-ipa: only users can have role membership granted")
-	// }
-
 	roleDN := entitlement.Resource.GetExternalId().Id
 
 	principalDNArr := []string{principal.GetExternalId().Id}
@@ -262,13 +258,9 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 	entitlement := grant.Entitlement
 	principal := grant.Principal
 
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ipa: only users can have role membership revoked")
-	}
+	roleDN := entitlement.Resource.GetExternalId().Id
 
-	roleDN := entitlement.Resource.Id.Resource
-
-	principalDNArr := []string{principal.Id.Resource}
+	principalDNArr := []string{principal.GetExternalId().Id}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Delete(attrRoleMember, principalDNArr)
 
