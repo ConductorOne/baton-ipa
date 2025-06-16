@@ -21,8 +21,8 @@ import (
 )
 
 var objectClassesToResourceTypes = map[string]*v2.ResourceType{
-	"ipaUserGroup": resourceTypeGroup,
-	"posixAccount": resourceTypeUser,
+	"ipausergroup": resourceTypeGroup,
+	"posixaccount": resourceTypeUser,
 }
 
 const (
