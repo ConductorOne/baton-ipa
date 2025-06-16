@@ -20,11 +20,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var objectClassesToResourceTypes = map[string]*v2.ResourceType{
-	"ipausergroup": resourceTypeGroup,
-	"posixaccount": resourceTypeUser,
-}
-
 const (
 	groupFilter     = "(&(objectClass=ipausergroup)" + excludeCompatFilter + ")"
 	groupByIDFilter = `(&(objectClass=ipausergroup)(ipaUniqueID=%s)` + excludeCompatFilter + `)`
@@ -270,7 +265,7 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 		} else {
 			// Fall back to creating a grant and assuming it's for a user.
 			g = newGrantFromDN(resource, parsedDN.String(), resourceTypeUser)
-			l.Warn("baton-ipa: multiple members found", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN))
+			l.Warn("baton-ipa: member not found", zap.String("group", groupDN.String()), zap.String("member_dn", memberDN))
 		}
 
 		if g.Id == "" {
