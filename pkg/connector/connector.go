@@ -37,6 +37,13 @@ var (
 			v2.ResourceType_TRAIT_ROLE,
 		},
 	}
+	resourceTypeHbacRule = &v2.ResourceType{
+		Id:          "hbac_rule",
+		DisplayName: "HBAC Rule",
+		Traits: []v2.ResourceType_Trait{
+			v2.ResourceType_TRAIT_UNSPECIFIED,
+		},
+	}
 )
 
 type LDAP struct {
@@ -49,6 +56,7 @@ func (l *LDAP) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceS
 		userBuilder(l.client, l.config.UserSearchDN, l.config.DisableOperationalAttrs),
 		groupBuilder(l.client, l.config.GroupSearchDN, l.config.UserSearchDN),
 		roleBuilder(l.client, l.config.RoleSearchDN),
+		hbacRuleBuilder(l.client),
 	}
 }
 
