@@ -40,23 +40,75 @@ brew install conductorone/baton/baton conductorone/baton/baton-ipa
 | `--base-dn` | `BATON_BASE_DN`   |  **optional** Base Distinguished name to search for LDAP objects in, for example `DC=example,DC=com` |
 | `--user-search-dn` | `BATON_USER_SEARCH_DN` |  **optional**  Distinguished name to search for User objects in.  If unset the Base DN is used. |
 | `--group-search-dn` | `BATON_GROUP_SEARCH_DN` |  **optional**  Distinguished name to search for User objects in.  If unset the Base DN is used. |
-| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable Provisioning of Groups by `baton-ipa`. `true` or `false`.  Defaults to `false` |
+| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable Provisioning of Groups and Roles by `baton-ipa`. `true` or `false`.  Defaults to `false` |
 
 Use `baton-ipa --help` to see all configuration flags and environment variables.
 
 # Developing baton-ipa
 
-## How to test with Docker Compose
-You can use [compose.yaml](./compose.yaml) to launch an LDAP server and a PHP LDAP admin server to interact with the LDAP server.
+## How to test on an ARM-based Mac using podman
 
-Run `docker-compose up` to launch the containers.
+### Install and configure podman
+```
+brew install podman
+podman machine init
+podman machine start
+```
 
-You can then access the PHP LDAP admin server at http://localhost:8080 and login with the admin credentials you provided in the docker-compose file.
+### Allow binding to port < 1024 on the podman VM
+> **Warning**: Proceed with caution. By default, rootless users are not allowed to bind to ports under 1024. FreeIPA requires ports 80 and 443 for access to the admin UI. If you are only accessing via LDAP, skip this step.
 
-username: `CN=admin,DC=example,DC=org`
-password: `admin`
+```
+podman machine ssh
 
-After you login you can create new resources to be synced by baton. 
+sudo vi /etc/sysctl.conf
+
+### Add the following entry to /etc/sysctl.conf:
+net.ipv4.ip_unprivileged_port_start=80
+
+### Save and exit session
+
+podman machine stop
+podman machine start
+```
+
+### Install and configure FreeIPA
+```
+podman pull quay.io/freeipa/freeipa-server:almalinux-10
+
+podman volume create freeipa-data
+    
+podman run --name freeipa -ti -h ipa.example.test --read-only \
+    -v freeipa-data:/data:Z \
+    -e PASSWORD=Secret123 \
+    -p 80:80 -p 22389:389 -p 22636:636 -p 443:443 \
+    freeipa-server:almalinux-10 ipa-server-install -r EXAMPLE.TEST --no-ntp --no-ui-redirect
+
+# You will be prompted with a series of configuration questions. Fill them out to complete the configuration.
+```
+
+## Configure access to the Admin UI
+
+The FreeIPA container requires access via a domain name. 
+
+Configure a hosts entry on your local machine to point example.test to 127.0.0.1.
+
+Edit `/etc/hosts` and add an entry:
+```
+ipa.example.test 127.0.0.1
+```
+
+The Admin UI should accessible by browsing to `https://ipa.example.test`.
+
+Username: `admin`
+Password: `Secret123`
+
+## Testing
+Once the FreeIPA container is running, you should be able to initiate a sync using:
+
+```
+baton-ipa --url ldap://localhost:22389 --bind-dn uid=admin,cn=users,cn=accounts,dc=example,dc=test --password Secret123
+```
 
 After creating new resources on the LDAP server, use the `baton-ipa` cli to sync the data from the LDAP server with the example command below.
 `baton-ipa --base-dn dc=example,dc=org --bind-dn cn=admin,dc=example,dc=org --password admin --domain localhost`
@@ -67,11 +119,14 @@ After successfully syncing data, use the baton CLI to list the resources and see
 
 # Data Model
 
-`baton-ipa` will fetch information about the following LDAP resources:
+`baton-ipa` will fetch information about the following IPA resources:
 
 - Users
-- Roles as `organizationalRole` in LDAP
-- Groups as `groupOfUniqueNames` in LDAP
+- Roles
+- Groups
+- Host
+- Host Groups
+- HBAC Rules
 
 `baton-ipa` will sync information only from under the base DN specified by the `--base-dn` flag in the configuration.
 
