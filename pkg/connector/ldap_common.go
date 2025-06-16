@@ -6,10 +6,12 @@ const (
 	// LDAP filter to exclude the compat schema, which is for backward compatibility with older LDAP clients.
 	excludeCompatFilter = "(!(cn:dn:=compat))"
 	ipaUniqueIDFilter   = "(ipaUniqueID=%s)"
+	entryUUIDFilter     = "(entryUUID=%s)"
 
 	attrIPAUniqueID = "ipaUniqueID"
 	attrCommonName  = "cn"
 	attrDescription = "description"
+	attrEntryUUID   = "entryUUID"
 )
 
 var objectClassesToResourceTypes = map[string]*v2.ResourceType{
