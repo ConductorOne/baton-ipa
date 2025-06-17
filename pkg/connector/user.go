@@ -23,29 +23,34 @@ import (
 // InetOrgPerson resource structure
 // https://datatracker.ietf.org/doc/html/rfc2798
 const (
-	userObjectClasses     = "(objectClass=inetOrgPerson)(objectClass=person)(objectClass=user)(objectClass=organizationalPerson)"
-	userFilter            = "(|" + userObjectClasses + ")"
-	attrUserUID           = "uid"
-	attrUserCommonName    = "cn"
-	attrFirstName         = "givenName"
-	attrLastName          = "sn"
-	attrUserMail          = "mail"
-	attrUserDisplayName   = "displayName"
-	attrUserCreatedAt     = "createTimestamp"
-	attrUserAuthTimestamp = "authTimestamp"
-	attrObjectGUID        = "objectGUID"
-
-	// Microsoft active directory specific attribute.
-	attrsAMAccountName     = "sAMAccountName"
-	attrUserPrincipalName  = "userPrincipalName"
-	attrUserAccountControl = "userAccountControl"
-	attrUserLastLogon      = "lastLogonTimestamp"
-
-	// FreeIPA (Red Hat Identity) specific attributes.
-	attrNSAccountLock = "nsAccountLock"
+	userFilter          = "(&(objectClass=posixAccount)" + excludeCompatFilter + ")"
+	attrUserUID         = "uid"
+	attrUserCommonName  = "cn"
+	attrFirstName       = "givenName"
+	attrLastName        = "sn"
+	attrUserMail        = "mail"
+	attrUserDisplayName = "displayName"
+	attrUserCreatedAt   = "createTimestamp"
+	attrUserLastLogin   = "krblastsuccessfulauth"
+	attrNSAccountLock   = "nsAccountLock"
 )
 
 var allAttrs = []string{"*", "+"}
+
+var (
+	stagedUsersDN *ldap3.RelativeDN = &ldap3.RelativeDN{Attributes: []*ldap3.AttributeTypeAndValue{
+		{
+			Type:  "cn",
+			Value: "staged users",
+		},
+	}}
+	preservedUsersDN *ldap3.RelativeDN = &ldap3.RelativeDN{Attributes: []*ldap3.AttributeTypeAndValue{
+		{
+			Type:  "cn",
+			Value: "deleted users",
+		},
+	}}
+)
 
 type userResourceType struct {
 	resourceType            *v2.ResourceType
@@ -75,27 +80,12 @@ func parseUserNames(user *ldap.Entry) (string, string, string) {
 	return firstName, lastName, displayName
 }
 
-func parseUserStatus(user *ldap.Entry) (v2.UserTrait_Status_Status, error) {
+func parseUserStatus(user *ldap.Entry, userDN *ldap3.DN) (v2.UserTrait_Status_Status, error) {
 	userStatus := v2.UserTrait_Status_STATUS_UNSPECIFIED
 
-	// Currently only UserAccountControlFlag from Microsoft or nsAccountLock from FreeIPA is supported
-	userAccountControlFlag := user.GetEqualFoldAttributeValue(attrUserAccountControl)
 	nsAccountLockFlag := user.GetEqualFoldAttributeValue(attrNSAccountLock)
 
-	if userAccountControlFlag != "" {
-		userAccountControlFlag, err := strconv.ParseInt(userAccountControlFlag, 10, 64)
-		if err != nil {
-			return userStatus, err
-		}
-		// Check if the ACCOUNTDISABLE flag (bit 2) is set
-		// https://learn.microsoft.com/en-us/troubleshoot/windows-server/identity/useraccountcontrol-manipulate-account-properties
-		if (userAccountControlFlag & 2) == 0 {
-			userStatus = v2.UserTrait_Status_STATUS_ENABLED
-		} else {
-			userStatus = v2.UserTrait_Status_STATUS_DISABLED
-		}
-		return userStatus, nil
-	} else if nsAccountLockFlag != "" {
+	if nsAccountLockFlag != "" {
 		locked, _ := strconv.ParseBool(nsAccountLockFlag)
 		if locked {
 			userStatus = v2.UserTrait_Status_STATUS_DISABLED
@@ -111,13 +101,10 @@ func parseUserLogin(user *ldap.Entry) (string, []string) {
 	login := ""
 	aliases := mapset.NewSet[string]()
 
-	sAMAccountName := user.GetEqualFoldAttributeValue(attrsAMAccountName)
 	uid := user.GetEqualFoldAttributeValue(attrUserUID)
 	cn := user.GetEqualFoldAttributeValue(attrUserCommonName)
-	principalName := user.GetEqualFoldAttributeValue(attrUserPrincipalName)
-	guid := user.GetEqualFoldAttributeValue(attrObjectGUID)
 
-	for _, attr := range []string{sAMAccountName, uid, cn, principalName, guid} {
+	for _, attr := range []string{uid, cn} {
 		if attr == "" || containsBinaryData(attr) {
 			continue
 		}
@@ -133,6 +120,10 @@ func parseUserLogin(user *ldap.Entry) (string, []string) {
 }
 
 func parseUserLastLogin(lastLoginStr string) (*time.Time, error) {
+	if lastLoginStr == "" {
+		return nil, nil
+	}
+
 	lastLoginTime, err := time.Parse("20060102150405Z0700", lastLoginStr)
 	if err == nil {
 		lastLoginTime = lastLoginTime.UTC()
@@ -164,6 +155,11 @@ func containsBinaryData(value string) bool {
 func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 	l := ctxzap.Extract(ctx)
 
+	ipaUniqueID := user.GetEqualFoldAttributeValue(attrIPAUniqueID)
+	if ipaUniqueID == "" {
+		return nil, fmt.Errorf("ldap-connector: user %s has no ipaUniqueID", user.DN)
+	}
+
 	firstName, lastName, displayName := parseUserNames(user)
 	userId := user.GetEqualFoldAttributeValue(attrUserUID)
 
@@ -191,7 +187,7 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		}
 	}
 
-	userStatus, err := parseUserStatus(user)
+	userStatus, err := parseUserStatus(user, udn)
 	if err != nil {
 		return nil, err
 	}
@@ -234,10 +230,10 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		userTraitOptions = append(userTraitOptions, rs.WithCreatedAt(createTime))
 	}
 
-	// Try openldap format first, then fall back to Active Directory's format
-	lastLogin, err := parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserLastLogon))
+	// This might not be supported by FreeIPA
+	lastLogin, err := parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserLastLogin))
 	if err != nil {
-		lastLogin, _ = parseUserLastLogin(user.GetEqualFoldAttributeValue(attrUserAuthTimestamp))
+		l.Warn("baton-ipa: failed to parse user last login", zap.String("user_dn", userDN), zap.Error(err), zap.String("last_login", user.GetEqualFoldAttributeValue(attrUserLastLogin)))
 	}
 	if lastLogin != nil {
 		userTraitOptions = append(userTraitOptions, rs.WithLastLogin(*lastLogin))
@@ -248,13 +244,14 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		displayName = userId
 	}
 
-	l.Debug("creating user resource", zap.String("display_name", displayName), zap.String("user_id", userId), zap.String("user_dn", userDN))
+	l.Debug("baton-ipa:creating user resource", zap.String("display_name", displayName), zap.String("user_id", userId), zap.String("user_dn", userDN))
 
 	resource, err := rs.NewUserResource(
 		displayName,
 		resourceTypeUser,
-		userDN,
+		ipaUniqueID,
 		userTraitOptions,
+		rs.WithExternalID(&v2.ExternalId{Id: user.DN}),
 	)
 	if err != nil {
 		return nil, err
@@ -285,7 +282,7 @@ func (u *userResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 		ResourcesPageSize,
 	)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ipa-connector: failed to list users: %w", err)
+		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list users: %w", err)
 	}
 
 	pageToken, err := bag.NextToken(nextPage)
@@ -296,6 +293,16 @@ func (u *userResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 	var rv []*v2.Resource
 	for _, userEntry := range userEntries {
 		l.Debug("processing user", zap.String("dn", userEntry.DN))
+
+		udn, err := ldap.CanonicalizeDN(userEntry.DN)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		// Skip staged and deleted users
+		if containsRDN(udn, stagedUsersDN) || containsRDN(udn, preservedUsersDN) {
+			continue
+		}
+
 		ur, err := userResource(ctx, userEntry)
 		if err != nil {
 			return nil, pageToken, nil, err
@@ -314,23 +321,23 @@ func (u *userResourceType) Get(ctx context.Context, resourceId *v2.ResourceId, p
 
 	userDN, err := ldap.CanonicalizeDN(resourceId.Resource)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ipa-connector: failed to canonicalize user DN: %w", err)
+		return nil, nil, fmt.Errorf("baton-ipa: failed to canonicalize user DN: %w", err)
 	}
 
 	userEntries, _, err := u.client.LdapSearch(ctx, ldap3.ScopeBaseObject, userDN, userFilter, allAttrs, "", ResourcesPageSize)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ipa-connector: failed to get user: %w", err)
+		return nil, nil, fmt.Errorf("baton-ipa: failed to get user: %w", err)
 	}
 
 	if len(userEntries) == 0 {
-		return nil, nil, fmt.Errorf("ipa-connector: user not found")
+		return nil, nil, fmt.Errorf("baton-ipa: user not found")
 	}
 
 	userEntry := userEntries[0]
 
 	ur, err := userResource(ctx, userEntry)
 	if err != nil {
-		return nil, nil, fmt.Errorf("ipa-connector: failed to get user: %w", err)
+		return nil, nil, fmt.Errorf("baton-ipa: failed to get user: %w", err)
 	}
 
 	return ur, nil, nil
@@ -343,13 +350,13 @@ func (u *userResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId
 
 	userDN, err := ldap.CanonicalizeDN(resourceId.Resource)
 	if err != nil {
-		return nil, fmt.Errorf("ipa-connector: failed to canonicalize user DN: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to canonicalize user DN: %w", err)
 	}
 
 	deleteRequest := &ldap3.DelRequest{DN: userDN.String()}
 	err = u.client.LdapDelete(ctx, deleteRequest)
 	if err != nil {
-		return nil, fmt.Errorf("ipa-connector: failed to delete user: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to delete user: %w", err)
 	}
 
 	return nil, nil

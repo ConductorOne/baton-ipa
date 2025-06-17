@@ -67,3 +67,12 @@ func parseValue(entry *ldap.Entry, targetAttrs []string) string {
 
 	return ""
 }
+
+func containsRDN(dn *ldap.DN, targetRDN *ldap.RelativeDN) bool {
+	for _, rdn := range dn.RDNs {
+		if rdn.Equal(targetRDN) {
+			return true
+		}
+	}
+	return false
+}

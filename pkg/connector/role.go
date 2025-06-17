@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	roleFilter = "(objectClass=organizationalRole)"
+	roleFilter = "(&(objectClass=groupofnames)(cn:dn:=roles))"
 
 	attrRoleCommonName  = "cn"
-	attrRoleMember      = "roleOccupant"
+	attrRoleMember      = "member"
 	attrRoleDescription = "description"
 
 	roleMemberEntitlement = "member"
@@ -54,12 +54,18 @@ func roleResource(ctx context.Context, role *ldap.Entry) (*v2.Resource, error) {
 		rs.WithRoleProfile(profile),
 	}
 
+	// Roles do not have an ipaUniqueID, so we use the entryUUID as the identifier
+	entryUUID := role.GetEqualFoldAttributeValue(attrEntryUUID)
+
 	roleName := role.GetEqualFoldAttributeValue(attrRoleCommonName)
 	resource, err := rs.NewRoleResource(
 		roleName,
 		resourceTypeRole,
-		roleDN,
+		entryUUID,
 		roleTraitOptions,
+		rs.WithExternalID(&v2.ExternalId{
+			Id: role.DN,
+		}),
 	)
 	if err != nil {
 		return nil, err
@@ -78,12 +84,12 @@ func (r *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 		ldap3.ScopeWholeSubtree,
 		r.roleSearchDN,
 		roleFilter,
-		nil,
+		allAttrs,
 		page,
 		ResourcesPageSize,
 	)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ipa-connector: failed to list roles: %w", err)
+		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list roles: %w", err)
 	}
 
 	pageToken, err := bag.NextToken(nextPage)
@@ -99,7 +105,6 @@ func (r *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 		if err != nil {
 			return nil, "", nil, err
 		}
-
 		rv = append(rv, rr)
 	}
 
@@ -110,9 +115,9 @@ func (r *roleResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 	var rv []*v2.Entitlement
 
 	assignmentOptions := []ent.EntitlementOption{
-		ent.WithGrantableTo(resourceTypeUser),
+		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup, resourceTypeHostGroup, resourceTypeHost),
 		ent.WithDisplayName(fmt.Sprintf("%s Role %s", resource.DisplayName, roleMemberEntitlement)),
-		ent.WithDescription(fmt.Sprintf("Access to %s role in LDAP", resource.DisplayName)),
+		ent.WithDescription(fmt.Sprintf("Access to %s role in IPA", resource.DisplayName)),
 	}
 
 	// create membership entitlement
@@ -127,20 +132,21 @@ func (r *roleResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 
 func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
-	roleDN, err := ldap.CanonicalizeDN(resource.Id.Resource)
+	rawDN := resource.GetExternalId().Id
+	roleDN, err := ldap.CanonicalizeDN(rawDN)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("ipa-connector: invalid group DN: '%s' in group grants: %w", resource.Id.Resource, err)
+		return nil, "", nil, fmt.Errorf("baton-ipa: invalid role DN: '%s' in role grants: %w", resource.Id.Resource, err)
 	}
 	l = l.With(zap.Stringer("role_dn", roleDN))
 
-	ldapRole, err := r.client.LdapGet(
+	ldapRole, err := r.client.LdapGetWithStringDN(
 		ctx,
-		roleDN,
-		roleFilter,
+		rawDN,
+		"",
 		nil,
 	)
 	if err != nil {
-		err := fmt.Errorf("ipa-connector: failed to list role members: %w", err)
+		err := fmt.Errorf("baton-ipa: failed to list role members: %w", err)
 		l.Error("failed to get role object", zap.Error(err))
 		return nil, "", nil, err
 	}
@@ -148,36 +154,91 @@ func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 	members := parseValues(ldapRole, []string{attrRoleMember})
 	var rv []*v2.Grant
 	for dn := range members.Iter() {
-		dnx, err := ldap.CanonicalizeDN(dn)
+		_, err := ldap.CanonicalizeDN(dn)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("ipa-connector: invalid DN in role_members: '%s': %w", dn, err)
+			return nil, "", nil, fmt.Errorf("baton-ipa: invalid DN in role_members: '%s': %w", dn, err)
 		}
 
-		urId, err := rs.NewResourceID(resourceTypeUser, dnx.String())
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("ipa-connector: failed to find user with dn %s", dn)
-		}
-		rv = append(
-			rv,
-			grant.NewGrant(
-				resource,
-				roleMemberEntitlement,
-				urId,
-			),
+		member, _, err := r.client.LdapSearchWithStringDN(
+			ctx,
+			ldap3.ScopeBaseObject,
+			dn,
+			"",
+			nil,
+			"",
+			1,
 		)
+		if err != nil {
+			l.Error("baton-ipa: failed to get role member", zap.String("role_dn", roleDN.String()), zap.String("member_dn", dn), zap.Error(err))
+		}
+		var g *v2.Grant
+		if len(member) != 1 {
+			l.Warn("baton-ipa: member not found", zap.String("role_dn", roleDN.String()), zap.String("member_dn", dn))
+			continue
+		}
+
+		g = newRoleGrantFromEntry(resource, member[0])
+		if g == nil {
+			l.Error("baton-ipa: grant is not supported for member", zap.String("role_dn", roleDN.String()), zap.String("member_dn", dn), zap.Error(err))
+			continue
+		}
+
+		rv = append(rv, g)
 	}
 
 	return rv, "", nil, nil
 }
 
-func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ipa: only users can have role membership granted")
+func newRoleGrantFromEntry(roleResource *v2.Resource, entry *ldap3.Entry) *v2.Grant {
+	ipaUniqueID := entry.GetEqualFoldAttributeValue(attrIPAUniqueID)
+
+	for _, objectClass := range entry.GetAttributeValues("objectClass") {
+		if resourceType, ok := objectClassesToResourceTypes[objectClass]; ok {
+			return newRoleGrantFromDN(roleResource, ipaUniqueID, resourceType)
+		}
 	}
 
-	roleDN := entitlement.Resource.Id.Resource
+	return nil
+}
 
-	principalDNArr := []string{principal.Id.Resource}
+func newRoleGrantFromDN(roleResource *v2.Resource, ipaUniqueID string, resourceType *v2.ResourceType) *v2.Grant {
+	grantOpts := []grant.GrantOption{}
+
+	switch resourceType {
+	case resourceTypeGroup:
+		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
+			EntitlementIds: []string{
+				fmt.Sprintf("group:%s:member", ipaUniqueID),
+			},
+		}))
+	case resourceTypeHostGroup, resourceTypeHost:
+		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
+			EntitlementIds: []string{
+				fmt.Sprintf("host_group:%s:member", ipaUniqueID),
+			},
+		}))
+	}
+
+	g := grant.NewGrant(
+		// remove group profile from grant so we're not saving all group memberships in every grant
+		&v2.Resource{
+			Id: roleResource.Id,
+		},
+		roleMemberEntitlement,
+		// remove user profile from grant so we're not saving repetitive user info in every grant
+		&v2.ResourceId{
+			ResourceType: resourceType.Id,
+			Resource:     ipaUniqueID,
+		},
+		grantOpts...,
+	)
+	return g
+}
+
+func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	roleDN := entitlement.Resource.GetExternalId().Id
+
+	principalDNArr := []string{principal.GetExternalId().Id}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Add(attrRoleMember, principalDNArr)
 
@@ -187,7 +248,7 @@ func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, en
 		modifyRequest,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("ipa-connector: failed to grant role membership to user: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to grant role membership to user: %w", err)
 	}
 
 	return nil, nil
@@ -197,13 +258,9 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 	entitlement := grant.Entitlement
 	principal := grant.Principal
 
-	if principal.Id.ResourceType != resourceTypeUser.Id {
-		return nil, fmt.Errorf("baton-ipa: only users can have role membership revoked")
-	}
+	roleDN := entitlement.Resource.GetExternalId().Id
 
-	roleDN := entitlement.Resource.Id.Resource
-
-	principalDNArr := []string{principal.Id.Resource}
+	principalDNArr := []string{principal.GetExternalId().Id}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Delete(attrRoleMember, principalDNArr)
 
@@ -219,7 +276,7 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 				return nil, nil
 			}
 		}
-		return nil, fmt.Errorf("ipa-connector: failed to revoke role membership from user: %w", err)
+		return nil, fmt.Errorf("baton-ipa: failed to revoke role membership from user: %w", err)
 	}
 
 	return nil, nil

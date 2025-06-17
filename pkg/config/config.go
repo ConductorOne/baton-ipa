@@ -20,9 +20,9 @@ var (
 	bindDNField   = field.StringField("bind-dn", field.WithDescription("The user DN to bind to the LDAP server"))
 
 	userSearchDNField = field.StringField("user-search-dn",
-		field.WithDescription("The DN to search for users under. Example: 'OU=Users,DC=baton,DC=example,DC=com'"))
+		field.WithDescription("The DN to search for users under. Example: 'cn=accounts,dc=example,dc=test'"))
 	groupSearchDNField = field.StringField("group-search-dn",
-		field.WithDescription("The DN to search for groups under. Example: 'OU=Groups,DC=baton,DC=example,DC=com'"))
+		field.WithDescription("The DN to search for groups under. Example: 'cn=groups,cn=accounts,dc=example,dc=test'"))
 	roleSearchDNField = field.StringField("role-search-dn",
 		field.WithDescription("The DN to search for roles under. Example: 'OU=Roles,DC=baton,DC=example,DC=com'"))
 	filterField = field.StringField("filter",
