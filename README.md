@@ -104,14 +104,10 @@ Username: `admin`
 Password: `Secret123`
 
 ## Testing
-Once the FreeIPA container is running, you should be able to initiate a sync using:
-
+FreeIPA should now be running. Create new resources on the FreeIPA server. Use the `baton-ipa` cli to sync the data from the FreeIPA server with the example command below.
 ```
 baton-ipa --url ldap://localhost:22389 --bind-dn uid=admin,cn=users,cn=accounts,dc=example,dc=test --password Secret123
 ```
-
-After creating new resources on the LDAP server, use the `baton-ipa` cli to sync the data from the LDAP server with the example command below.
-`baton-ipa --base-dn dc=example,dc=org --bind-dn cn=admin,dc=example,dc=org --password admin --domain localhost`
 
 After successfully syncing data, use the baton CLI to list the resources and see the synced data.
 `baton resources`
