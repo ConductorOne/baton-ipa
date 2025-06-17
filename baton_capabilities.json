@@ -17,6 +17,47 @@
     },
     {
       "resourceType": {
+        "id": "hbac_rule",
+        "displayName": "HBAC Rule",
+        "traits": [
+          "TRAIT_ROLE"
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ]
+    },
+    {
+      "resourceType": {
+        "id": "host",
+        "displayName": "Host",
+        "traits": [
+          "TRAIT_UNSPECIFIED"
+        ],
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ]
+    },
+    {
+      "resourceType": {
+        "id": "host_group",
+        "displayName": "Host Group",
+        "traits": [
+          "TRAIT_UNSPECIFIED"
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ]
+    },
+    {
+      "resourceType": {
         "id": "role",
         "displayName": "Role",
         "traits": [
