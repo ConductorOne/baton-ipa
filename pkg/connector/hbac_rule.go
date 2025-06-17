@@ -192,6 +192,7 @@ func (r *hbacRuleResourceType) Grants(ctx context.Context, resource *v2.Resource
 		)
 		if err != nil {
 			l.Error("baton-ipa: failed to get hbac rule member", zap.String("hbac_rule_dn", hbacRuleDN.String()), zap.String("member_dn", memberDN), zap.Error(err))
+			continue
 		}
 		var g *v2.Grant
 		if len(member) == 1 {
