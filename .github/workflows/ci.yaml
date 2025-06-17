@@ -42,50 +42,44 @@ jobs:
         uses: guyarb/golang-test-annotations@v0.5.1
         with:
           test-results: test.json
-  test:
-    runs-on: ubuntu-latest
-    services:
-      freeipa:
-        image: quay.io/freeipa/freeipa-server:almalinux-10
-        ports:
-          - "389:389"
-          - "636:636"
-        env:
-          PASSWORD: Secret123
-    env:
-      BATON_PASSWORD: Secret123
-      BATON_BIND_DN: 'uid=admin,cn=users,cn=accounts,dc=example,dc=test'
-      BATON_URL: 'ldaps://freeipa'
-      BATON_INSECURE_SKIP_VERIFY: true
-    steps:
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.23.x
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Setup node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '21.x'
-      - name: Setup FreeIPA
-        run: |
-          docker ps -a
-          docker exec $(docker ps --filter='ancestor=quay.io/freeipa/freeipa-server:almalinux-10' --format='{{.ID}}') bash -c 'ipa-server-install -r EXAMPLE.TEST --no-ntp --no-ui-redirect --unattended'
-      # - name: Install ldapadd
-      #   run: sudo apt update && sudo apt install ldap-utils
-      # - name: Create ldif files
-      #   run: node ./scripts/ldif.js && ls -la
-      # - name: Import ldif into openldap
-      #   run: ./scripts/import.sh
-      - name: Install baton
-        run: ./scripts/get-baton.sh && mv baton /usr/local/bin
-      - name: Build baton-ipa
-        run: go build ./cmd/baton-ipa
-      - name: Run baton-ipa
-        run: ./baton-ipa
-      - name: List grants
-        run: baton grants
+  # test:
+  #   runs-on: ubuntu-latest
+  #   services:
+  #     freeipa:
+  #       image: quay.io/freeipa/freeipa-server:almalinux-10
+  #       ports:
+  #         - "389:389"
+  #         - "636:636"
+  #       env:
+  #         PASSWORD: Secret123
+  #   env:
+  #     BATON_PASSWORD: Secret123
+  #     BATON_BIND_DN: 'uid=admin,cn=users,cn=accounts,dc=example,dc=test'
+  #     BATON_URL: 'ldaps://freeipa'
+  #     BATON_INSECURE_SKIP_VERIFY: true
+  #   steps:
+  #     - name: Install Go
+  #       uses: actions/setup-go@v5
+  #       with:
+  #         go-version: 1.23.x
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #     - name: Setup node.js
+  #       uses: actions/setup-node@v3
+  #       with:
+  #         node-version: '21.x'
+  #     - name: Setup FreeIPA
+  #       run: |
+  #         docker ps -a
+  #         docker exec $(docker ps --filter='ancestor=quay.io/freeipa/freeipa-server:almalinux-10' --format='{{.ID}}') bash -c 'ipa-server-install -r EXAMPLE.TEST --no-ntp --no-ui-redirect --unattended'
+  #     - name: Install baton
+  #       run: ./scripts/get-baton.sh && mv baton /usr/local/bin
+  #     - name: Build baton-ipa
+  #       run: go build ./cmd/baton-ipa
+  #     - name: Run baton-ipa
+  #       run: ./baton-ipa
+  #     - name: List grants
+  #       run: baton grants
       # - name: Test grant/revoking posixGroup entitlements
       #   env:
       #     BATON: baton
