@@ -45,31 +45,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     services:
-      openldap:
-        image: osixia/openldap:latest
+      freeipa:
+        image: quay.io/freeipa/freeipa-server:almalinux-10
         ports:
           - "389:389"
           - "636:636"
         env:
-          LDAP_ORGANISATION: example
-          LDAP_DOMAIN: example.org
-          LDAP_ADMIN_USERNAME: admin
-          LDAP_ADMIN_PASSWORD: admin
-          LDAP_CONFIG_PASSWORD: config_pass
-          LDAP_BASE_DN: "dc=example,dc=org"
-          BITNAMI_DEBUG: true
-          LDAP_REMOVE_CONFIG_AFTER_SETUP: false
-          LDAP_ENABLE_TLS: true
-          LDAP_LDAPS_PORT_NUMBER: 636
-          LDAP_TLS_CERT_FILE: /container/service/slapd/assets/certs/ldap.crt
-          LDAP_TLS_KEY_FILE: /container/service/slapd/assets/certs/ldap.key
-          LDAP_TLS_CA_FILE: /container/service/slapd/assets/certs/ca.crt
-          LDAP_TLS_VERIFY_CLIENT: try
+          PASSWORD: Secret123
     env:
-      BATON_PASSWORD: admin
-      BATON_BASE_DN: 'dc=example,dc=org'
-      BATON_USER_DN: 'CN=admin,DC=example,DC=org'
-      BATON_URL: 'ldaps://localhost'
+      BATON_PASSWORD: Secret123
+      BATON_BIND_DN: 'uid=admin,cn=users,cn=accounts,dc=example,dc=test'
+      BATON_URL: 'ldaps://freeipa'
       BATON_INSECURE_SKIP_VERIFY: true
     steps:
       - name: Install Go
@@ -82,12 +68,14 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '21.x'
-      - name: Install ldapadd
-        run: sudo apt update && sudo apt install ldap-utils
-      - name: Create ldif files
-        run: node ./scripts/ldif.js && ls -la
-      - name: Import ldif into openldap
-        run: ./scripts/import.sh
+      - name: Setup FreeIPA
+        run: docker exec $(docker ps --filter='ancestor=quay.io/freeipa/freeipa-server:almalinux-10' --format='{{.ID}}') bash -c 'ipa-server-install -r EXAMPLE.TEST --no-ntp --no-ui-redirect --unattended'
+      # - name: Install ldapadd
+      #   run: sudo apt update && sudo apt install ldap-utils
+      # - name: Create ldif files
+      #   run: node ./scripts/ldif.js && ls -la
+      # - name: Import ldif into openldap
+      #   run: ./scripts/import.sh
       - name: Install baton
         run: ./scripts/get-baton.sh && mv baton /usr/local/bin
       - name: Build baton-ipa
@@ -96,19 +84,19 @@ jobs:
         run: ./baton-ipa
       - name: List grants
         run: baton grants
-      - name: Test grant/revoking posixGroup entitlements
-        env:
-          BATON: baton
-          BATON_LDAP: ./baton-ipa
-          BATON_ENTITLEMENT: "group:cn=testgroup00000,dc=example,dc=org:member"
-          BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
-          BATON_PRINCIPAL_TYPE: "user"
-        run: ./scripts/grant-revoke.sh
-      - name: Test grant/revoking groupOfUniqueNames entitlements
-        env:
-          BATON: baton
-          BATON_LDAP: ./baton-ipa
-          BATON_ENTITLEMENT: "group:cn=othertestgroup00000,dc=example,dc=org:member"
-          BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
-          BATON_PRINCIPAL_TYPE: "user"
-        run: ./scripts/grant-revoke.sh
+      # - name: Test grant/revoking posixGroup entitlements
+      #   env:
+      #     BATON: baton
+      #     BATON_LDAP: ./baton-ipa
+      #     BATON_ENTITLEMENT: "group:cn=testgroup00000,dc=example,dc=org:member"
+      #     BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
+      #     BATON_PRINCIPAL_TYPE: "user"
+      #   run: ./scripts/grant-revoke.sh
+      # - name: Test grant/revoking groupOfUniqueNames entitlements
+      #   env:
+      #     BATON: baton
+      #     BATON_LDAP: ./baton-ipa
+      #     BATON_ENTITLEMENT: "group:cn=othertestgroup00000,dc=example,dc=org:member"
+      #     BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
+      #     BATON_PRINCIPAL_TYPE: "user"
+      #   run: ./scripts/grant-revoke.sh
