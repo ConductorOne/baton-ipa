@@ -70,7 +70,7 @@ jobs:
           node-version: '21.x'
       - name: Setup FreeIPA
         run: |
-          docker ps
+          docker ps -a
           docker exec $(docker ps --filter='ancestor=freeipa/freeipa-server:almalinux-10' --format='{{.ID}}') bash -c 'ipa-server-install -r EXAMPLE.TEST --no-ntp --no-ui-redirect --unattended'
       # - name: Install ldapadd
       #   run: sudo apt update && sudo apt install ldap-utils
