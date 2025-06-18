@@ -50,10 +50,13 @@ func hostGroupResource(ctx context.Context, hostGroup *ldap.Entry) (*v2.Resource
 	hostGroupName := hostGroup.GetEqualFoldAttributeValue(attrCommonName)
 	description := hostGroup.GetEqualFoldAttributeValue(attrDescription)
 
-	resource, err := rs.NewResource(
+	groupTraits := []rs.GroupTraitOption{}
+
+	resource, err := rs.NewGroupResource(
 		hostGroupName,
 		resourceTypeHostGroup,
 		ipaUniqueID,
+		groupTraits,
 		rs.WithDescription(description),
 		rs.WithExternalID(&v2.ExternalId{
 			Id: hostDN,
