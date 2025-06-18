@@ -56,7 +56,7 @@ var (
 		Id:          "host_group",
 		DisplayName: "Host Group",
 		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_UNSPECIFIED,
+			v2.ResourceType_TRAIT_GROUP,
 		},
 	}
 )
