@@ -134,7 +134,7 @@ func (r *hbacRuleResourceType) Entitlements(ctx context.Context, resource *v2.Re
 	var rv []*v2.Entitlement
 
 	assignmentOptions := []ent.EntitlementOption{
-		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup, resourceTypeHost, resourceTypeHostGroup),
 		ent.WithDisplayName(fmt.Sprintf("%s Permission %s", resource.DisplayName, permissionAssignmentEntitlement)),
 		ent.WithDescription(fmt.Sprintf("Access to %s permission", resource.DisplayName)),
 	}
@@ -273,7 +273,14 @@ func newHbacRuleGrantFromEntry(hbacRuleResource *v2.Resource, entry *ldap3.Entry
 
 func newHbacRuleGrantFromDN(hbacRuleResource *v2.Resource, ipaUniqueID string, resourceType *v2.ResourceType) *v2.Grant {
 	grantOpts := []grant.GrantOption{}
-	if resourceType == resourceTypeGroup {
+	switch resourceType {
+	case resourceTypeHostGroup:
+		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
+			EntitlementIds: []string{
+				fmt.Sprintf("host_group:%s:member", ipaUniqueID),
+			},
+		}))
+	case resourceTypeGroup:
 		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
 			EntitlementIds: []string{
 				fmt.Sprintf("group:%s:member", ipaUniqueID),
