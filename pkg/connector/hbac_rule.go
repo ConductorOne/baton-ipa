@@ -1,24 +1,6 @@
 package connector
 
-import (
-	"context"
-	"fmt"
-
-	"github.com/conductorone/baton-ipa/pkg/ldap"
-	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"github.com/conductorone/baton-sdk/pkg/pagination"
-	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
-	grant "github.com/conductorone/baton-sdk/pkg/types/grant"
-	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
-	ldap3 "github.com/go-ldap/ldap/v3"
-	"go.uber.org/zap"
-)
-
+/*
 const (
 	permissionAssignmentEntitlement = "assigned"
 
@@ -28,16 +10,6 @@ const (
 	attrHBACRuleMemberUser = "memberUser"
 	attrHBACRuleMemberHost = "memberHost"
 )
-
-type hbacRuleResourceType struct {
-	resourceType *v2.ResourceType
-	client       *ldap.Client
-	baseDN       *ldap3.DN
-}
-
-func (r *hbacRuleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
-	return r.resourceType
-}
 
 func hbacRuleResource(ctx context.Context, hbacRule *ldap.Entry) (*v2.Resource, error) {
 	ipaUniqueID := hbacRule.GetEqualFoldAttributeValue(attrIPAUniqueID)
@@ -302,11 +274,4 @@ func newHbacRuleGrantFromDN(hbacRuleResource *v2.Resource, ipaUniqueID string, r
 	)
 	return g
 }
-
-func hbacRuleBuilder(client *ldap.Client, baseDN *ldap3.DN) *hbacRuleResourceType {
-	return &hbacRuleResourceType{
-		resourceType: resourceTypeHbacRule,
-		client:       client,
-		baseDN:       baseDN,
-	}
-}
+*/
