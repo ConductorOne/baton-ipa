@@ -104,31 +104,98 @@ func (r *hostGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *
 	return rv, nextPageToken, nil, nil
 }
 
-func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var rv []*v2.Entitlement
 
-	assignmentOptions := []ent.EntitlementOption{
-		ent.WithGrantableTo(resourceTypeHost, resourceTypeHostGroup),
-		ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMembershipEntitlement)),
-		ent.WithDescription(fmt.Sprintf("Access to %s host group in IPA", resource.DisplayName)),
+	bag := &pagination.Bag{}
+	err := bag.Unmarshal(pt.Token)
+	if err != nil {
+		return nil, "", nil, err
 	}
 
-	// create membership entitlement
-	rv = append(rv, ent.NewAssignmentEntitlement(
-		resource,
-		hostGroupMembershipEntitlement,
-		assignmentOptions...,
-	))
+	if pt.Token == "" {
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeHbacRule.Id,
+		})
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeHostGroup.Id,
+		})
+	}
 
-	rv = append(rv, ent.NewAssignmentEntitlement(
-		resource,
-		hostGroupMemberManagerEntitlement,
-		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-		ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
-		ent.WithDescription(fmt.Sprintf("Manage %s host group in IPA", resource.DisplayName)),
-	))
+	var pageToken string
+	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id {
+		// Static entitlements for host group
 
-	return rv, "", nil, nil
+		assignmentOptions := []ent.EntitlementOption{
+			ent.WithGrantableTo(resourceTypeHost, resourceTypeHostGroup),
+			ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMembershipEntitlement)),
+			ent.WithDescription(fmt.Sprintf("Access to %s host group in IPA", resource.DisplayName)),
+		}
+
+		// create membership entitlement
+		rv = append(rv, ent.NewAssignmentEntitlement(
+			resource,
+			hostGroupMembershipEntitlement,
+			assignmentOptions...,
+		))
+
+		rv = append(rv, ent.NewAssignmentEntitlement(
+			resource,
+			hostGroupMemberManagerEntitlement,
+			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+			ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
+			ent.WithDescription(fmt.Sprintf("Manage %s host group in IPA", resource.DisplayName)),
+		))
+
+		bag.Pop()
+
+		pageToken, err = bag.Marshal()
+		if err != nil {
+			return nil, "", nil, err
+		}
+	}
+
+	if bag.Current() != nil && bag.Current().ResourceTypeID == resourceTypeHbacRule.Id {
+		hostDN := resource.GetExternalId().GetId()
+		if hostDN == "" {
+			return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
+		}
+
+		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
+			ctx,
+			ldap3.ScopeWholeSubtree,
+			r.baseDN,
+			hbacRuleFilter,
+			nil,
+			bag.Current().Token,
+			ResourcesPageSize,
+		)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rules in '%s': %w", r.baseDN.String(), err)
+		}
+
+		for _, hbacRuleEntry := range hbacRuleEntries {
+			accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
+			assignmentOptions := []ent.EntitlementOption{
+				ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+				ent.WithDisplayName(fmt.Sprintf("%s Host Group HBAC Rule %s", resource.DisplayName, accessRule)),
+				ent.WithDescription(fmt.Sprintf("Host-Based Access Control for Host Group %s via rule '%s'", resource.DisplayName, accessRule)),
+			}
+
+			rv = append(rv, ent.NewAssignmentEntitlement(
+				resource,
+				accessRule,
+				assignmentOptions...,
+			))
+		}
+
+		pageToken, err = bag.NextToken(nextPage)
+		if err != nil {
+			return nil, "", nil, err
+		}
+	}
+
+	return rv, pageToken, nil, nil
 }
 
 func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {

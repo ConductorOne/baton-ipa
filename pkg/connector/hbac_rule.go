@@ -7,6 +7,10 @@ import (
 	grant "github.com/conductorone/baton-sdk/pkg/types/grant"
 )
 
+const (
+	hbacRuleFilter = "(&(objectClass=ipahbacrule))"
+)
+
 func newHbacRuleGrantFromDN(resource *v2.Resource, accessRule string, ipaUniqueID string, resourceType *v2.ResourceType) (*v2.Grant, error) {
 	grantOpts := []grant.GrantOption{}
 	if resourceType == resourceTypeGroup {

@@ -144,7 +144,7 @@ func (r *hostResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 }
 
 func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	bag, page, err := parsePageToken(pt.Token, &v2.ResourceId{ResourceType: "hbac_rule"})
+	bag, page, err := parsePageToken(pt.Token, &v2.ResourceId{ResourceType: resourceTypeHbacRule.Id})
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -154,7 +154,6 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
 	}
 
-	hbacRuleFilter := fmt.Sprintf(hostHbacRuleFilter, hostDN)
 	hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 		ctx,
 		ldap3.ScopeWholeSubtree,

@@ -51,6 +51,13 @@ var (
 			v2.ResourceType_TRAIT_UNSPECIFIED,
 		},
 	}
+	resourceTypeHbacRule = &v2.ResourceType{
+		Id:          "hbac_rule",
+		DisplayName: "HBAC Rule",
+		Traits: []v2.ResourceType_Trait{
+			v2.ResourceType_TRAIT_UNSPECIFIED,
+		},
+	}
 )
 
 type LDAP struct {
