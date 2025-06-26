@@ -3,8 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-	"strings"
-	"sync"
 
 	"github.com/conductorone/baton-ipa/pkg/ldap"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -28,52 +26,7 @@ type hostResourceType struct {
 	baseDN       *ldap3.DN
 
 	// Member lookup by DN.
-	membersCache   map[string]*member
-	membersCacheMu sync.RWMutex
-}
-
-type member struct {
-	ipaUniqueID  string
-	dn           string
-	resourceType *v2.ResourceType
-}
-
-func (r *hostResourceType) getMember(ctx context.Context, dn string) (*member, error) {
-	r.membersCacheMu.RLock()
-	defer r.membersCacheMu.RUnlock()
-
-	m, ok := r.membersCache[dn]
-	if ok {
-		return m, nil
-	}
-
-	memberEntry, err := r.client.LdapGetWithStringDN(ctx, dn, "", []string{attrIPAUniqueID, attrObjectClass})
-	if err != nil {
-		return nil, fmt.Errorf("baton-ipa: failed to search for member %s: %w", dn, err)
-	}
-
-	ipaUniqueID := memberEntry.GetEqualFoldAttributeValue(attrIPAUniqueID)
-
-	var resourceType *v2.ResourceType
-	for _, objectClass := range memberEntry.GetAttributeValues(attrObjectClass) {
-		if rt, ok := objectClassesToResourceTypes[objectClass]; ok {
-			resourceType = rt
-			break
-		}
-	}
-
-	if resourceType == nil {
-		return nil, fmt.Errorf("baton-ipa: unsupported object class for member %s: %s", dn, strings.Join(memberEntry.GetAttributeValues("objectClass"), ", "))
-	}
-
-	m = &member{
-		ipaUniqueID:  ipaUniqueID,
-		dn:           dn,
-		resourceType: resourceType,
-	}
-
-	r.membersCache[dn] = m
-	return m, nil
+	ipaObjectCache *ipaObjectCache
 }
 
 func (r *hostResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -228,7 +181,7 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 
 		// for each member, lookup the ipaUniqueID and resource type
 		for _, member := range members.ToSlice() {
-			m, err := r.getMember(ctx, member)
+			m, err := r.ipaObjectCache.get(ctx, member)
 			if err != nil {
 				return nil, "", nil, fmt.Errorf("baton-ipa: failed to get member %s: %w", member, err)
 			}
@@ -250,7 +203,6 @@ func hostBuilder(client *ldap.Client, baseDN *ldap3.DN) *hostResourceType {
 		resourceType:   resourceTypeHost,
 		client:         client,
 		baseDN:         baseDN,
-		membersCache:   make(map[string]*member),
-		membersCacheMu: sync.RWMutex{},
+		ipaObjectCache: newMemberCache(client, baseDN),
 	}
 }

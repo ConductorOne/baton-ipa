@@ -32,6 +32,9 @@ type hostGroupResourceType struct {
 	resourceType *v2.ResourceType
 	client       *ldap.Client
 	baseDN       *ldap3.DN
+
+	// Member lookup by DN.
+	ipaObjectCache *ipaObjectCache
 }
 
 func (r *hostGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -156,6 +159,8 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	if bag.Current() != nil && bag.Current().ResourceTypeID == resourceTypeHbacRule.Id {
+		// Dynamic entitlements for host group hbac rules
+
 		hostDN := resource.GetExternalId().GetId()
 		if hostDN == "" {
 			return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
@@ -198,73 +203,143 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	return rv, pageToken, nil, nil
 }
 
-func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+	var grants []*v2.Grant
 	l := ctxzap.Extract(ctx)
 
-	externalId := resource.GetExternalId()
-	if externalId == nil {
+	bag := &pagination.Bag{}
+	err := bag.Unmarshal(pt.Token)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
+	if pt.Token == "" {
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeHbacRule.Id,
+		})
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeHostGroup.Id,
+		})
+	}
+
+	hostGroupDN := resource.GetExternalId()
+	if hostGroupDN == nil {
 		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
 	}
 
-	hostGroupDN, err := ldap.CanonicalizeDN(externalId.Id)
+	canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN.Id)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
 	}
-	l = l.With(zap.Stringer("host_group_dn", hostGroupDN))
+	l = l.With(zap.Stringer("host_group_dn", canonicalDN))
 
-	var ldapHostGroup *ldap3.Entry
-	ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, externalId)
-	if err != nil {
-		l.Error("baton-ipa: failed to list host group members", zap.String("host_group_dn", resource.Id.Resource), zap.Error(err))
-		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
-	}
+	var pageToken string
+	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id {
+		// Static grants for host group
 
-	members := parseValues(ldapHostGroup, []string{attrHostGroupMember, attrHostGroupManager})
-
-	// create grants
-	var rv []*v2.Grant
-	for memberDN := range members.Iter() {
-		_, err := ldap.CanonicalizeDN(memberDN)
+		var ldapHostGroup *ldap3.Entry
+		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, hostGroupDN)
 		if err != nil {
-			l.Error("baton-ipa: invalid member DN", zap.String("member_dn", memberDN), zap.Error(err))
-			continue
+			l.Error("baton-ipa: failed to list host group members", zap.String("host_group_dn", resource.Id.Resource), zap.Error(err))
+			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
 		}
 
-		member, _, err := r.client.LdapSearchWithStringDN(
+		members := parseValues(ldapHostGroup, []string{attrHostGroupMember, attrHostGroupManager})
+
+		// create grants
+		for memberDN := range members.Iter() {
+			_, err := ldap.CanonicalizeDN(memberDN)
+			if err != nil {
+				l.Error("baton-ipa: invalid member DN", zap.String("member_dn", memberDN), zap.Error(err))
+				continue
+			}
+
+			member, _, err := r.client.LdapSearchWithStringDN(
+				ctx,
+				ldap3.ScopeBaseObject,
+				memberDN,
+				"",
+				nil,
+				"",
+				1,
+			)
+			if err != nil {
+				l.Error("baton-ipa: failed to get host group member", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
+				continue
+			}
+			var g *v2.Grant
+			if len(member) != 1 {
+				l.Warn("baton-ipa: member not found", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
+				continue
+			}
+
+			g = newHostGroupGrantFromEntry(resource, member[0])
+			if g == nil {
+				l.Warn("baton-ipa: member not supported", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
+				continue
+			}
+
+			if g.Id == "" {
+				l.Error("baton-ipa: failed to create grant", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
+				continue
+			}
+			grants = append(grants, g)
+		}
+
+		grants = uniqueGrants(grants)
+
+		bag.Pop()
+
+		pageToken, err = bag.Marshal()
+		if err != nil {
+			return nil, "", nil, err
+		}
+	}
+
+	if bag.Current().ResourceTypeID == resourceTypeHbacRule.Id {
+		// Dynamic grants for host group hbac rules
+
+		filter := fmt.Sprintf(hostHbacRuleFilter, hostGroupDN)
+		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
-			ldap3.ScopeBaseObject,
-			memberDN,
-			"",
+			ldap3.ScopeWholeSubtree,
+			r.baseDN,
+			filter,
 			nil,
-			"",
-			1,
+			bag.Current().Token,
+			ResourcesPageSize,
 		)
 		if err != nil {
-			l.Error("baton-ipa: failed to get host group member", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
-			continue
-		}
-		var g *v2.Grant
-		if len(member) != 1 {
-			l.Warn("baton-ipa: member not found", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
-			continue
+			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rules in '%s': %w", r.baseDN.String(), err)
 		}
 
-		g = newHostGroupGrantFromEntry(resource, member[0])
-		if g == nil {
-			l.Warn("baton-ipa: member not supported", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
-			continue
+		for _, hbacRuleEntry := range hbacRuleEntries {
+			accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
+			members := parseValues(hbacRuleEntry, []string{attrHBACRuleMemberUser})
+
+			// for each member, lookup the ipaUniqueID and resource type
+			for _, member := range members.ToSlice() {
+				m, err := r.ipaObjectCache.get(ctx, member)
+				if err != nil {
+					return nil, "", nil, fmt.Errorf("baton-ipa: failed to get member %s: %w", member, err)
+				}
+
+				grant, err := newHbacRuleGrantFromDN(resource, accessRule, m.ipaUniqueID, m.resourceType)
+				if err != nil {
+					return nil, "", nil, fmt.Errorf("baton-ipa: failed to create grant for member %s: %w", member, err)
+				}
+
+				grants = append(grants, grant)
+			}
 		}
 
-		if g.Id == "" {
-			l.Error("baton-ipa: failed to create grant", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
-			continue
+		pageToken, err = bag.NextToken(nextPage)
+		if err != nil {
+			return nil, "", nil, err
 		}
-		rv = append(rv, g)
 	}
 
-	rv = uniqueGrants(rv)
-
-	return rv, "", nil, nil
+	return grants, pageToken, nil, nil
 }
 
 func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l *zap.Logger, resourceId *v2.ResourceId, externalId *v2.ExternalId) (*ldap3.Entry, error) {
@@ -363,8 +438,9 @@ func newHostGroupGrantFromDN(hostGroupResource *v2.Resource, ipaUniqueID string,
 
 func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN) *hostGroupResourceType {
 	return &hostGroupResourceType{
-		resourceType: resourceTypeHostGroup,
-		client:       client,
-		baseDN:       baseDN,
+		resourceType:   resourceTypeHostGroup,
+		client:         client,
+		baseDN:         baseDN,
+		ipaObjectCache: newMemberCache(client, baseDN),
 	}
 }
