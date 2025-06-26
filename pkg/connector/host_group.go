@@ -222,12 +222,12 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		})
 	}
 
-	hostGroupDN := resource.GetExternalId()
-	if hostGroupDN == nil {
+	hostGroupDN := resource.GetExternalId().GetId()
+	if hostGroupDN == "" {
 		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
 	}
 
-	canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN.Id)
+	canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
 	}
@@ -238,7 +238,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		// Static grants for host group
 
 		var ldapHostGroup *ldap3.Entry
-		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, hostGroupDN)
+		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId())
 		if err != nil {
 			l.Error("baton-ipa: failed to list host group members", zap.String("host_group_dn", resource.Id.Resource), zap.Error(err))
 			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
