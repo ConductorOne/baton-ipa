@@ -14,8 +14,6 @@ import (
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 
 	ldap3 "github.com/go-ldap/ldap/v3"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.uber.org/zap"
 )
 
 const (
@@ -195,18 +193,10 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 }
 
 func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	l := ctxzap.Extract(ctx)
-
 	hostDN := resource.GetExternalId().GetId()
 	if hostDN == "" {
 		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
 	}
-
-	canonicalDN, err := ldap.CanonicalizeDN(hostDN)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host DN: '%s' in host grants: %w", resource.Id.Resource, err)
-	}
-	l = l.With(zap.Stringer("host_dn", canonicalDN))
 
 	bag, page, err := parsePageToken(token.Token, &v2.ResourceId{ResourceType: "hbac_rule"})
 	if err != nil {
@@ -224,7 +214,7 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 		ResourcesPageSize,
 	)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rules in '%s': %w", r.baseDN.String(), err)
+		return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rules using filter '%s': %w", hbacRuleFilter, err)
 	}
 
 	pageToken, err := bag.NextToken(nextPage)
