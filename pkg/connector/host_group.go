@@ -441,6 +441,6 @@ func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN) *hostGroupResourceT
 		resourceType:   resourceTypeHostGroup,
 		client:         client,
 		baseDN:         baseDN,
-		ipaObjectCache: newMemberCache(client, baseDN),
+		ipaObjectCache: newIPAObjectCache(client, baseDN),
 	}
 }

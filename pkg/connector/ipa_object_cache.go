@@ -58,7 +58,7 @@ func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error)
 	return m, nil
 }
 
-func newMemberCache(client *ldap.Client, baseDN *ldap3.DN) *ipaObjectCache {
+func newIPAObjectCache(client *ldap.Client, baseDN *ldap3.DN) *ipaObjectCache {
 	return &ipaObjectCache{
 		client:  client,
 		baseDN:  baseDN,

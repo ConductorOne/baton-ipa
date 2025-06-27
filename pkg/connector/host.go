@@ -203,6 +203,6 @@ func hostBuilder(client *ldap.Client, baseDN *ldap3.DN) *hostResourceType {
 		resourceType:   resourceTypeHost,
 		client:         client,
 		baseDN:         baseDN,
-		ipaObjectCache: newMemberCache(client, baseDN),
+		ipaObjectCache: newIPAObjectCache(client, baseDN),
 	}
 }
