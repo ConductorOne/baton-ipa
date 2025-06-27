@@ -37,26 +37,25 @@ var (
 			v2.ResourceType_TRAIT_ROLE,
 		},
 	}
-	resourceTypeHbacRule = &v2.ResourceType{
-		Id:          "hbac_rule",
-		DisplayName: "HBAC Rule",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_ROLE,
-		},
-	}
 	resourceTypeHost = &v2.ResourceType{
 		Id:          "host",
 		DisplayName: "Host",
 		Traits: []v2.ResourceType_Trait{
 			v2.ResourceType_TRAIT_UNSPECIFIED,
 		},
-		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}),
 	}
 	resourceTypeHostGroup = &v2.ResourceType{
 		Id:          "host_group",
 		DisplayName: "Host Group",
 		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_GROUP,
+			v2.ResourceType_TRAIT_UNSPECIFIED,
+		},
+	}
+	resourceTypeHbacRule = &v2.ResourceType{
+		Id:          "hbac_rule",
+		DisplayName: "HBAC Rule",
+		Traits: []v2.ResourceType_Trait{
+			v2.ResourceType_TRAIT_UNSPECIFIED,
 		},
 	}
 )
@@ -71,7 +70,6 @@ func (l *LDAP) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceS
 		userBuilder(l.client, l.config.UserSearchDN, l.config.DisableOperationalAttrs),
 		groupBuilder(l.client, l.config.GroupSearchDN, l.config.UserSearchDN),
 		roleBuilder(l.client, l.config.RoleSearchDN),
-		hbacRuleBuilder(l.client, l.config.BaseDN),
 		hostBuilder(l.client, l.config.BaseDN),
 		hostGroupBuilder(l.client, l.config.BaseDN),
 	}
