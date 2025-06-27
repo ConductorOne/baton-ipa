@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/conductorone/baton-ipa/pkg/ldap"
@@ -33,19 +34,23 @@ func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error)
 		return m, nil
 	}
 
-	memberEntry, err := c.client.LdapGetWithStringDN(ctx, dn, "", []string{attrIPAUniqueID, attrObjectClass})
+	entry, err := c.client.LdapGetWithStringDN(ctx, dn, "", []string{attrIPAUniqueID, attrObjectClass})
 	if err != nil {
-		return nil, fmt.Errorf("baton-ipa: failed to search for member %s: %w", dn, err)
+		return nil, fmt.Errorf("baton-ipa: failed to search for entry %s: %w", dn, err)
 	}
 
-	ipaUniqueID := memberEntry.GetEqualFoldAttributeValue(attrIPAUniqueID)
+	ipaUniqueID := entry.GetEqualFoldAttributeValue(attrIPAUniqueID)
 
 	var resourceType *v2.ResourceType
-	for _, objectClass := range memberEntry.GetAttributeValues(attrObjectClass) {
+	for _, objectClass := range entry.GetAttributeValues(attrObjectClass) {
 		if rt, ok := objectClassesToResourceTypes[objectClass]; ok {
 			resourceType = rt
 			break
 		}
+	}
+
+	if resourceType == nil {
+		return nil, fmt.Errorf("baton-ipa: unsupported object class for entry %s: %s", dn, strings.Join(entry.GetAttributeValues("objectClass"), ", "))
 	}
 
 	m = &ipaObject{
