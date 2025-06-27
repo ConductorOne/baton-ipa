@@ -14,7 +14,7 @@ type ipaObjectCache struct {
 	client *ldap.Client
 	baseDN *ldap3.DN
 
-	members map[string]*ipaObject
+	entries map[string]*ipaObject
 	mu      sync.RWMutex
 }
 
@@ -28,7 +28,7 @@ func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error)
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	m, ok := c.members[dn]
+	m, ok := c.entries[dn]
 	if ok {
 		return m, nil
 	}
@@ -54,7 +54,7 @@ func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error)
 		resourceType: resourceType,
 	}
 
-	c.members[dn] = m
+	c.entries[dn] = m
 	return m, nil
 }
 
@@ -62,6 +62,6 @@ func newIPAObjectCache(client *ldap.Client, baseDN *ldap3.DN) *ipaObjectCache {
 	return &ipaObjectCache{
 		client:  client,
 		baseDN:  baseDN,
-		members: make(map[string]*ipaObject),
+		entries: make(map[string]*ipaObject),
 	}
 }
