@@ -51,14 +51,9 @@ var (
 			v2.ResourceType_TRAIT_UNSPECIFIED,
 		},
 	}
-	resourceTypeHbacRule = &v2.ResourceType{
-		Id:          "hbac_rule",
-		DisplayName: "HBAC Rule",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_UNSPECIFIED,
-		},
-	}
 )
+
+const hbacRuleEntryType = "hbac_rule"
 
 type LDAP struct {
 	client *ldap.Client

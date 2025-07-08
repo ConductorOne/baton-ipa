@@ -118,7 +118,7 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 
 	if pt.Token == "" {
 		bag.Push(pagination.PageState{
-			ResourceTypeID: resourceTypeHbacRule.Id,
+			ResourceTypeID: hbacRuleEntryType,
 		})
 		bag.Push(pagination.PageState{
 			ResourceTypeID: resourceTypeHostGroup.Id,
@@ -158,7 +158,7 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 		}
 	}
 
-	if bag.Current() != nil && bag.Current().ResourceTypeID == resourceTypeHbacRule.Id {
+	if bag.Current() != nil && bag.Current().ResourceTypeID == hbacRuleEntryType {
 		// Dynamic entitlements for host group hbac rules
 
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
@@ -210,7 +210,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 
 	if pt.Token == "" {
 		bag.Push(pagination.PageState{
-			ResourceTypeID: resourceTypeHbacRule.Id,
+			ResourceTypeID: hbacRuleEntryType,
 		})
 		bag.Push(pagination.PageState{
 			ResourceTypeID: resourceTypeHostGroup.Id,
@@ -291,7 +291,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		}
 	}
 
-	if bag.Current().ResourceTypeID == resourceTypeHbacRule.Id {
+	if bag.Current().ResourceTypeID == hbacRuleEntryType {
 		// Dynamic grants for host group hbac rules
 
 		filter := fmt.Sprintf(hostHbacRuleFilter, hostGroupDN)
