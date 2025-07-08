@@ -8,10 +8,13 @@ const (
 	ipaUniqueIDFilter   = "(ipaUniqueID=%s)"
 	entryUUIDFilter     = "(entryUUID=%s)"
 
-	attrIPAUniqueID = "ipaUniqueID"
-	attrCommonName  = "cn"
-	attrDescription = "description"
-	attrEntryUUID   = "entryUUID"
+	attrIPAUniqueID        = "ipaUniqueID"
+	attrCommonName         = "cn"
+	attrDescription        = "description"
+	attrObjectClass        = "objectClass"
+	attrEntryUUID          = "entryUUID"
+	attrHBACRuleMemberUser = "memberUser"
+	attrHBACRuleMemberHost = "memberHost"
 )
 
 var objectClassesToResourceTypes = map[string]*v2.ResourceType{
