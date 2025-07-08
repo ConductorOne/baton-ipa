@@ -198,11 +198,11 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 	return grants, pageToken, nil, nil
 }
 
-func hostBuilder(client *ldap.Client, baseDN *ldap3.DN) *hostResourceType {
+func hostBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache) *hostResourceType {
 	return &hostResourceType{
 		resourceType:   resourceTypeHost,
 		client:         client,
 		baseDN:         baseDN,
-		ipaObjectCache: newIPAObjectCache(client, baseDN),
+		ipaObjectCache: ipaObjectCache,
 	}
 }

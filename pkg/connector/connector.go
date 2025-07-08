@@ -66,12 +66,13 @@ type LDAP struct {
 }
 
 func (l *LDAP) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+	ipaObjectCache := newIPAObjectCache(l.client, l.config.BaseDN)
 	return []connectorbuilder.ResourceSyncer{
 		userBuilder(l.client, l.config.UserSearchDN, l.config.DisableOperationalAttrs),
 		groupBuilder(l.client, l.config.GroupSearchDN, l.config.UserSearchDN),
 		roleBuilder(l.client, l.config.RoleSearchDN),
-		hostBuilder(l.client, l.config.BaseDN),
-		hostGroupBuilder(l.client, l.config.BaseDN),
+		hostBuilder(l.client, l.config.BaseDN, ipaObjectCache),
+		hostGroupBuilder(l.client, l.config.BaseDN, ipaObjectCache),
 	}
 }
 

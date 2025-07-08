@@ -436,11 +436,11 @@ func newHostGroupGrantFromDN(hostGroupResource *v2.Resource, ipaUniqueID string,
 	return g
 }
 
-func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN) *hostGroupResourceType {
+func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache) *hostGroupResourceType {
 	return &hostGroupResourceType{
 		resourceType:   resourceTypeHostGroup,
 		client:         client,
 		baseDN:         baseDN,
-		ipaObjectCache: newIPAObjectCache(client, baseDN),
+		ipaObjectCache: ipaObjectCache,
 	}
 }
