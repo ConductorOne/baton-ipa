@@ -27,12 +27,13 @@ type ipaObject struct {
 
 func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 
 	m, ok := c.entries[dn]
 	if ok {
+		c.mu.RUnlock()
 		return m, nil
 	}
+	c.mu.RUnlock()
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
