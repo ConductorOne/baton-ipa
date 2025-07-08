@@ -34,6 +34,14 @@ func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error)
 		return m, nil
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	m, ok = c.entries[dn]
+	if ok {
+		return m, nil
+	}
+
 	entry, err := c.client.LdapGetWithStringDN(ctx, dn, "", []string{attrIPAUniqueID, attrObjectClass})
 	if err != nil {
 		return nil, fmt.Errorf("baton-ipa: failed to search for entry %s: %w", dn, err)
