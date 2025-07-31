@@ -32,6 +32,9 @@ const (
 
 	groupMemberEntitlement  = "member"
 	groupManagerEntitlement = "manager"
+
+	internalAnyoneGroup   = "Anyone"
+	internalAnyoneGroupID = "anyone-group"
 )
 
 type groupResourceType struct {
@@ -174,14 +177,16 @@ func (g *groupResourceType) Entitlements(ctx context.Context, resource *v2.Resou
 		assignmentOptions...,
 	))
 
-	// create manager entitlement
-	rv = append(rv, ent.NewAssignmentEntitlement(
-		resource,
-		groupManagerEntitlement,
-		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-		ent.WithDisplayName(fmt.Sprintf("%s Group %s", resource.DisplayName, groupManagerEntitlement)),
-		ent.WithDescription(fmt.Sprintf("Manage %s group in IPA", resource.DisplayName)),
-	))
+	if resource.Id.Resource != internalAnyoneGroupID {
+		// create manager entitlement
+		rv = append(rv, ent.NewAssignmentEntitlement(
+			resource,
+			groupManagerEntitlement,
+			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+			ent.WithDisplayName(fmt.Sprintf("%s Group %s", resource.DisplayName, groupManagerEntitlement)),
+			ent.WithDescription(fmt.Sprintf("Manage %s group in IPA", resource.DisplayName)),
+		))
+	}
 
 	return rv, "", nil, nil
 }
@@ -226,6 +231,10 @@ func newGrantFromEntry(groupResource *v2.Resource, entry *ldap3.Entry, entitleme
 
 func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
+
+	if resource.Id.Resource == internalAnyoneGroupID {
+		return nil, "", nil, nil
+	}
 
 	externalId := resource.GetExternalId()
 	if externalId == nil {
