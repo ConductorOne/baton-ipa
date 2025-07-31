@@ -440,12 +440,10 @@ func newHostGroupGrantFromDN(hostGroupResource *v2.Resource, ipaUniqueID string,
 	}
 
 	g := grant.NewGrant(
-		// remove group profile from grant so we're not saving all group memberships in every grant
 		&v2.Resource{
 			Id: hostGroupResource.Id,
 		},
 		entitlement,
-		// remove user profile from grant so we're not saving repetitive user info in every grant
 		&v2.ResourceId{
 			ResourceType: resourceType.Id,
 			Resource:     ipaUniqueID,
