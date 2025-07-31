@@ -4,19 +4,12 @@ import (
 	"strings"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/go-ldap/ldap/v3"
 )
 
 var ResourcesPageSize uint32 = 50
-
-func annotationsForUserResourceType() annotations.Annotations {
-	annos := annotations.Annotations{}
-	annos.Update(&v2.SkipEntitlementsAndGrants{})
-	return annos
-}
 
 func splitFullName(fullName string) (string, string) {
 	parts := strings.Split(fullName, " ")

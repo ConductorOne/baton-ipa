@@ -133,6 +133,26 @@ func (g *groupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagi
 		rv = append(rv, gr)
 	}
 
+	if pageToken == "" {
+		profile := map[string]interface{}{
+			"group_description": "Internal group for anyone",
+		}
+		groupTraitOptions := []rs.GroupTraitOption{
+			rs.WithGroupProfile(profile),
+		}
+		resource, err := rs.NewGroupResource(
+			internalAnyoneGroup,
+			resourceTypeGroup,
+			internalAnyoneGroupID,
+			groupTraitOptions,
+			rs.WithDescription("Internal group for anyone"),
+		)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		rv = append(rv, resource)
+	}
+
 	return rv, pageToken, nil, nil
 }
 
