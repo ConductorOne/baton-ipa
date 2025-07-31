@@ -9,6 +9,7 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	ent "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grant "github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 
 	ldap3 "github.com/go-ldap/ldap/v3"
@@ -189,6 +190,18 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 			grants = append(grants, grant)
 		}
 	}
+
+	// Automatically grant access to Any Host host group
+	grants = append(grants, grant.NewGrant(
+		&v2.Resource{
+			Id: &v2.ResourceId{
+				ResourceType: resourceTypeHostGroup.Id,
+				Resource:     internalAnyHostGroupID,
+			},
+		},
+		hostGroupMembershipEntitlement,
+		resource,
+	))
 
 	return grants, pageToken, nil, nil
 }

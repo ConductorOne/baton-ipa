@@ -26,6 +26,9 @@ const (
 
 	attrHostGroupMember  = "member"
 	attrHostGroupManager = "memberManager"
+
+	internalAnyHostGroup   = "Any Host"
+	internalAnyHostGroupID = "any-host-group"
 )
 
 type hostGroupResourceType struct {
@@ -104,6 +107,19 @@ func (r *hostGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *
 		return nil, "", nil, err
 	}
 
+	if nextPageToken == "" {
+		anyHostGroupResource, err := rs.NewResource(
+			internalAnyHostGroup,
+			resourceTypeHostGroup,
+			internalAnyHostGroupID,
+			rs.WithDescription("Internal Host Group for Any Host"),
+		)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		rv = append(rv, anyHostGroupResource)
+	}
+
 	return rv, nextPageToken, nil, nil
 }
 
@@ -117,9 +133,11 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	if pt.Token == "" {
-		bag.Push(pagination.PageState{
-			ResourceTypeID: hbacRuleEntryType,
-		})
+		if resource.Id.Resource != internalAnyHostGroupID {
+			bag.Push(pagination.PageState{
+				ResourceTypeID: hbacRuleEntryType,
+			})
+		}
 		bag.Push(pagination.PageState{
 			ResourceTypeID: resourceTypeHostGroup.Id,
 		})
@@ -142,13 +160,15 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 			assignmentOptions...,
 		))
 
-		rv = append(rv, ent.NewAssignmentEntitlement(
-			resource,
-			hostGroupMemberManagerEntitlement,
-			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-			ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
-			ent.WithDescription(fmt.Sprintf("Manage %s host group in IPA", resource.DisplayName)),
-		))
+		if resource.Id.Resource != internalAnyHostGroupID {
+			rv = append(rv, ent.NewAssignmentEntitlement(
+				resource,
+				hostGroupMemberManagerEntitlement,
+				ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+				ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
+				ent.WithDescription(fmt.Sprintf("Manage %s host group in IPA", resource.DisplayName)),
+			))
+		}
 
 		bag.Pop()
 
@@ -201,6 +221,10 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	var grants []*v2.Grant
 	l := ctxzap.Extract(ctx)
+
+	if resource.Id.Resource == internalAnyHostGroupID {
+		return nil, "", nil, nil
+	}
 
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
