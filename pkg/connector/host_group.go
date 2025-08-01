@@ -26,9 +26,6 @@ const (
 
 	attrHostGroupMember  = "member"
 	attrHostGroupManager = "memberManager"
-
-	internalAnyHostGroup   = "Any Host"
-	internalAnyHostGroupID = "any-host-group"
 )
 
 type hostGroupResourceType struct {
@@ -107,19 +104,6 @@ func (r *hostGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *
 		return nil, "", nil, err
 	}
 
-	if nextPageToken == "" {
-		anyHostGroupResource, err := rs.NewResource(
-			internalAnyHostGroup,
-			resourceTypeHostGroup,
-			internalAnyHostGroupID,
-			rs.WithDescription("Internal Host Group for Any Host"),
-		)
-		if err != nil {
-			return nil, "", nil, err
-		}
-		rv = append(rv, anyHostGroupResource)
-	}
-
 	return rv, nextPageToken, nil, nil
 }
 
@@ -133,11 +117,9 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	if pt.Token == "" {
-		if resource.Id.Resource != internalAnyHostGroupID {
-			bag.Push(pagination.PageState{
-				ResourceTypeID: hbacRuleEntryType,
-			})
-		}
+		bag.Push(pagination.PageState{
+			ResourceTypeID: hbacRuleEntryType,
+		})
 		bag.Push(pagination.PageState{
 			ResourceTypeID: resourceTypeHostGroup.Id,
 		})
@@ -158,15 +140,13 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 			assignmentOptions...,
 		))
 
-		if resource.Id.Resource != internalAnyHostGroupID {
-			rv = append(rv, ent.NewAssignmentEntitlement(
-				resource,
-				hostGroupMemberManagerEntitlement,
-				ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-				ent.WithDisplayName(fmt.Sprintf("%s host group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
-				ent.WithDescription(fmt.Sprintf("Manager of %s host group", resource.DisplayName)),
-			))
-		}
+		rv = append(rv, ent.NewAssignmentEntitlement(
+			resource,
+			hostGroupMemberManagerEntitlement,
+			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+			ent.WithDisplayName(fmt.Sprintf("%s host group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
+			ent.WithDescription(fmt.Sprintf("Manager of %s host group", resource.DisplayName)),
+		))
 
 		bag.Pop()
 
@@ -219,12 +199,6 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	var grants []*v2.Grant
 	l := ctxzap.Extract(ctx)
-	anyHostGroup := resource.Id.Resource == internalAnyHostGroupID
-
-	if anyHostGroup {
-		// TODO: find hbac rules that apply to any host
-		return nil, "", nil, nil
-	}
 
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
@@ -236,29 +210,21 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		bag.Push(pagination.PageState{
 			ResourceTypeID: hbacRuleEntryType,
 		})
-		if !anyHostGroup {
-			bag.Push(pagination.PageState{
-				ResourceTypeID: resourceTypeHostGroup.Id,
-			})
-		}
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeHostGroup.Id,
+		})
 	}
 
 	hostGroupDN := resource.GetExternalId().GetId()
-	if !anyHostGroup && hostGroupDN == "" {
+	if hostGroupDN == "" {
 		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
 	}
 
-	var cdn string
-	if anyHostGroup {
-		cdn = internalAnyHostGroup
-	} else {
-		canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN)
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
-		}
-		cdn = canonicalDN.String()
+	canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
 	}
-	l = l.With(zap.String("host_group_dn", cdn))
+	l = l.With(zap.Stringer("host_group_dn", canonicalDN))
 
 	var pageToken string
 	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id { // Static (member/manager) grants for host group
@@ -319,12 +285,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 	}
 
 	if bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic grants for host group hbac rules
-		var filter string
-		if anyHostGroup {
-			filter = hbacRuleAnyHostFilter
-		} else {
-			filter = fmt.Sprintf(hostHbacRuleFilter, hostGroupDN)
-		}
+		filter := fmt.Sprintf(hostHbacRuleFilter, hostGroupDN)
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
 			ldap3.ScopeWholeSubtree,

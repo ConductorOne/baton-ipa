@@ -19,6 +19,9 @@ const (
 	hostFilter              = "(&(objectClass=ipahost))"
 	hostHbacRuleFilter      = "(&(objectClass=ipahbacrule)(memberHost=%s))"
 	hostHbacRuleEntitlement = "access"
+
+	internalAnyHost   = "Any Host"
+	internalAnyHostID = "any-host"
 )
 
 type hostResourceType struct {
@@ -92,6 +95,19 @@ func (r *hostResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 	nextPageToken, err := bag.NextToken(nextPage)
 	if err != nil {
 		return nil, "", nil, err
+	}
+
+	if nextPageToken == "" {
+		anyHostResource, err := rs.NewResource(
+			internalAnyHost,
+			resourceTypeHost,
+			internalAnyHostID,
+			rs.WithDescription("Internal host to represent any host"),
+		)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		rv = append(rv, anyHostResource)
 	}
 
 	return rv, nextPageToken, nil, nil
@@ -212,18 +228,6 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 			}
 		}
 	}
-
-	// Automatically grant access to Any Host host group
-	grants = append(grants, grant.NewGrant(
-		&v2.Resource{
-			Id: &v2.ResourceId{
-				ResourceType: resourceTypeHostGroup.Id,
-				Resource:     internalAnyHostGroupID,
-			},
-		},
-		hostGroupMembershipEntitlement,
-		resource,
-	))
 
 	return grants, pageToken, nil, nil
 }
