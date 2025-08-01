@@ -126,8 +126,8 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
 		assignmentOptions := []ent.EntitlementOption{
 			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-			ent.WithDisplayName(fmt.Sprintf("%s Host HBAC Rule %s", resource.DisplayName, accessRule)),
-			ent.WithDescription(fmt.Sprintf("Host-Based Access Control for Host %s via rule '%s'", resource.DisplayName, accessRule)),
+			ent.WithDisplayName(fmt.Sprintf("%s host %s HBAC rule", resource.DisplayName, accessRule)),
+			ent.WithDescription(fmt.Sprintf("HBAC rule %s is applied to", accessRule)), // HBAC rule applies to
 		}
 
 		rv = append(rv, ent.NewAssignmentEntitlement(
