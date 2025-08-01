@@ -203,6 +203,8 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 				accessRule,
 				assignmentOptions...,
 			))
+
+			// TODO: for each rule, create an entitlement for each host in the host group
 		}
 
 		pageToken, err = bag.NextToken(nextPage)
@@ -217,8 +219,10 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	var grants []*v2.Grant
 	l := ctxzap.Extract(ctx)
+	anyHostGroup := resource.Id.Resource == internalAnyHostGroupID
 
-	if resource.Id.Resource == internalAnyHostGroupID {
+	if anyHostGroup {
+		// TODO: find hbac rules that apply to any host
 		return nil, "", nil, nil
 	}
 
@@ -232,26 +236,32 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		bag.Push(pagination.PageState{
 			ResourceTypeID: hbacRuleEntryType,
 		})
-		bag.Push(pagination.PageState{
-			ResourceTypeID: resourceTypeHostGroup.Id,
-		})
+		if !anyHostGroup {
+			bag.Push(pagination.PageState{
+				ResourceTypeID: resourceTypeHostGroup.Id,
+			})
+		}
 	}
 
 	hostGroupDN := resource.GetExternalId().GetId()
-	if hostGroupDN == "" {
+	if !anyHostGroup && hostGroupDN == "" {
 		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
 	}
 
-	canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
+	var cdn string
+	if anyHostGroup {
+		cdn = internalAnyHostGroup
+	} else {
+		canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
+		}
+		cdn = canonicalDN.String()
 	}
-	l = l.With(zap.Stringer("host_group_dn", canonicalDN))
+	l = l.With(zap.String("host_group_dn", cdn))
 
 	var pageToken string
-	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id {
-		// Static grants for host group
-
+	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id { // Static (member/manager) grants for host group
 		var ldapHostGroup *ldap3.Entry
 		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId())
 		if err != nil {
@@ -260,8 +270,6 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		}
 
 		members := parseValues(ldapHostGroup, []string{attrHostGroupMember, attrHostGroupManager})
-
-		// create grants
 		for memberDN := range members.Iter() {
 			_, err := ldap.CanonicalizeDN(memberDN)
 			if err != nil {
@@ -304,17 +312,19 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		grants = uniqueGrants(grants)
 
 		bag.Pop()
-
 		pageToken, err = bag.Marshal()
 		if err != nil {
 			return nil, "", nil, err
 		}
 	}
 
-	if bag.Current().ResourceTypeID == hbacRuleEntryType {
-		// Dynamic grants for host group hbac rules
-
-		filter := fmt.Sprintf(hostHbacRuleFilter, hostGroupDN)
+	if bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic grants for host group hbac rules
+		var filter string
+		if anyHostGroup {
+			filter = hbacRuleAnyHostFilter
+		} else {
+			filter = fmt.Sprintf(hostHbacRuleFilter, hostGroupDN)
+		}
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
 			ldap3.ScopeWholeSubtree,
@@ -330,21 +340,43 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 
 		for _, hbacRuleEntry := range hbacRuleEntries {
 			accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
-			members := parseValues(hbacRuleEntry, []string{attrHBACRuleMemberUser})
+			userCategory := hbacRuleEntry.GetEqualFoldAttributeValue(attrHBACRuleUserCategory)
 
-			// for each member, lookup the ipaUniqueID and resource type
-			for _, member := range members.ToSlice() {
-				m, err := r.ipaObjectCache.get(ctx, member)
-				if err != nil {
-					return nil, "", nil, fmt.Errorf("baton-ipa: failed to get member %s: %w", member, err)
+			if userCategory == "all" { // access is granted to all users
+				grantOpts := []grant.GrantOption{}
+				grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
+					EntitlementIds: []string{
+						fmt.Sprintf("group:%s:member", internalAnyoneGroupID),
+					},
+				}))
+				grants = append(grants, grant.NewGrant(
+					&v2.Resource{
+						Id: resource.Id,
+					},
+					accessRule,
+					&v2.ResourceId{
+						ResourceType: resourceTypeGroup.Id,
+						Resource:     internalAnyoneGroupID,
+					},
+					grantOpts...,
+				))
+			} else { // access is granted to specific users
+				members := parseValues(hbacRuleEntry, []string{attrHBACRuleMemberUser})
+
+				// for each member, lookup the ipaUniqueID and resource type
+				for _, member := range members.ToSlice() {
+					m, err := r.ipaObjectCache.get(ctx, member)
+					if err != nil {
+						return nil, "", nil, fmt.Errorf("baton-ipa: failed to get member %s: %w", member, err)
+					}
+
+					grant, err := newHbacRuleGrantFromDN(resource, accessRule, m.ipaUniqueID, m.resourceType)
+					if err != nil {
+						return nil, "", nil, fmt.Errorf("baton-ipa: failed to create grant for member %s: %w", member, err)
+					}
+
+					grants = append(grants, grant)
 				}
-
-				grant, err := newHbacRuleGrantFromDN(resource, accessRule, m.ipaUniqueID, m.resourceType)
-				if err != nil {
-					return nil, "", nil, fmt.Errorf("baton-ipa: failed to create grant for member %s: %w", member, err)
-				}
-
-				grants = append(grants, grant)
 			}
 		}
 

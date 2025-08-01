@@ -52,8 +52,6 @@ var (
 	}
 )
 
-const hbacRuleEntryType = "hbac_rule"
-
 type LDAP struct {
 	client *ldap.Client
 	config *config.Config

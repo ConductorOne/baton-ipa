@@ -8,7 +8,10 @@ import (
 )
 
 const (
-	hbacRuleFilter = "(objectClass=ipahbacrule)"
+	hbacRuleEntryType = "hbac_rule"
+
+	hbacRuleFilter        = "(objectClass=ipahbacrule)"
+	hbacRuleAnyHostFilter = "(&(objectClass=ipahbacrule)(hostCategory=all))"
 
 	attrHBACRuleUserCategory = "userCategory"
 )
