@@ -285,7 +285,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 	}
 
 	if bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic grants for host group hbac rules
-		filter := fmt.Sprintf(hostHbacRuleFilter, hostGroupDN)
+		filter := fmt.Sprintf(hbacRuleHostFilter, hostGroupDN)
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
 			ldap3.ScopeWholeSubtree,

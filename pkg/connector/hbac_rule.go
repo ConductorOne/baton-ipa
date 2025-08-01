@@ -11,6 +11,7 @@ const (
 	hbacRuleEntryType = "hbac_rule"
 
 	hbacRuleFilter        = "(objectClass=ipahbacrule)"
+	hbacRuleHostFilter    = "(&(objectClass=ipahbacrule)(memberHost=%s))"
 	hbacRuleAnyHostFilter = "(&(objectClass=ipahbacrule)(hostCategory=all))"
 
 	attrHBACRuleUserCategory = "userCategory"

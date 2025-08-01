@@ -16,11 +16,9 @@ import (
 )
 
 const (
-	hostFilter              = "(&(objectClass=ipahost))"
-	hostHbacRuleFilter      = "(&(objectClass=ipahbacrule)(memberHost=%s))"
-	hostHbacRuleEntitlement = "access"
+	hostFilter = "(&(objectClass=ipahost))"
 
-	internalAnyHost   = "Any Host"
+	internalAnyHost   = "Any"
 	internalAnyHostID = "any-host"
 )
 
@@ -143,7 +141,7 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		assignmentOptions := []ent.EntitlementOption{
 			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
 			ent.WithDisplayName(fmt.Sprintf("%s host %s HBAC rule", resource.DisplayName, accessRule)),
-			ent.WithDescription(fmt.Sprintf("HBAC rule %s is applied to", accessRule)),
+			ent.WithDescription(fmt.Sprintf("Allows access to host via HBAC rule %s", accessRule)),
 		}
 
 		rv = append(rv, ent.NewAssignmentEntitlement(
@@ -158,7 +156,8 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 
 func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	hostDN := resource.GetExternalId().GetId()
-	if hostDN == "" {
+	isAnyHost := resource.Id.Resource == internalAnyHostID
+	if hostDN == "" && !isAnyHost {
 		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
 	}
 
@@ -167,7 +166,11 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 		return nil, "", nil, err
 	}
 
-	hbacRuleFilter := fmt.Sprintf(hostHbacRuleFilter, hostDN)
+	hbacRuleFilter := fmt.Sprintf(hbacRuleHostFilter, hostDN)
+	if isAnyHost {
+		hbacRuleFilter = hbacRuleAnyHostFilter
+	}
+
 	hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 		ctx,
 		ldap3.ScopeWholeSubtree,
