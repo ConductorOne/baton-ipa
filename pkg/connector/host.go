@@ -127,7 +127,7 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		assignmentOptions := []ent.EntitlementOption{
 			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
 			ent.WithDisplayName(fmt.Sprintf("%s host %s HBAC rule", resource.DisplayName, accessRule)),
-			ent.WithDescription(fmt.Sprintf("HBAC rule %s is applied to", accessRule)), // HBAC rule applies to
+			ent.WithDescription(fmt.Sprintf("HBAC rule %s is applied to", accessRule)),
 		}
 
 		rv = append(rv, ent.NewAssignmentEntitlement(

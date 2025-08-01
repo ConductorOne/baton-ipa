@@ -144,13 +144,11 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	var pageToken string
-	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id {
-		// Static entitlements for host group
-
+	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id { // Static entitlements for host group
 		assignmentOptions := []ent.EntitlementOption{
 			ent.WithGrantableTo(resourceTypeHost, resourceTypeHostGroup),
-			ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMembershipEntitlement)),
-			ent.WithDescription(fmt.Sprintf("Access to %s host group in IPA", resource.DisplayName)),
+			ent.WithDisplayName(fmt.Sprintf("%s host group %s", resource.DisplayName, hostGroupMembershipEntitlement)),
+			ent.WithDescription(fmt.Sprintf("Member of %s host group", resource.DisplayName)),
 		}
 
 		// create membership entitlement
@@ -165,8 +163,8 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 				resource,
 				hostGroupMemberManagerEntitlement,
 				ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-				ent.WithDisplayName(fmt.Sprintf("%s Host Group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
-				ent.WithDescription(fmt.Sprintf("Manage %s host group in IPA", resource.DisplayName)),
+				ent.WithDisplayName(fmt.Sprintf("%s host group %s", resource.DisplayName, hostGroupMemberManagerEntitlement)),
+				ent.WithDescription(fmt.Sprintf("Manager of %s host group", resource.DisplayName)),
 			))
 		}
 
@@ -178,9 +176,7 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 		}
 	}
 
-	if bag.Current() != nil && bag.Current().ResourceTypeID == hbacRuleEntryType {
-		// Dynamic entitlements for host group hbac rules
-
+	if bag.Current() != nil && bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic entitlements for host group hbac rules
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
 			ldap3.ScopeWholeSubtree,
@@ -198,8 +194,8 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 			accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
 			assignmentOptions := []ent.EntitlementOption{
 				ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-				ent.WithDisplayName(fmt.Sprintf("%s Host Group HBAC Rule %s", resource.DisplayName, accessRule)),
-				ent.WithDescription(fmt.Sprintf("Host-Based Access Control for Host Group %s via rule '%s'", resource.DisplayName, accessRule)),
+				ent.WithDisplayName(fmt.Sprintf("%s host group %s HBAC rule", resource.DisplayName, accessRule)),
+				ent.WithDescription(fmt.Sprintf("HBAC rule %s is applied to", accessRule)),
 			}
 
 			rv = append(rv, ent.NewAssignmentEntitlement(
