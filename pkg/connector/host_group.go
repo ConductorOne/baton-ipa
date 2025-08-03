@@ -220,6 +220,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
 	}
 
+	// Validate the host group DN
 	canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
@@ -350,21 +351,23 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 	return grants, pageToken, nil, nil
 }
 
+// getHostGroupWithFallback get an LDAP entry for a host group.
+// It first tries to get the host group by its DN. If that fails, it tries to get the host group by its IPA unique ID.
 func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l *zap.Logger, resourceId *v2.ResourceId, externalId *v2.ExternalId) (*ldap3.Entry, error) {
 	hostGroupDN := externalId.Id
-	ldapRule, err := r.client.LdapGetWithStringDN(
+	hostGroup, err := r.client.LdapGetWithStringDN(
 		ctx,
 		hostGroupDN,
 		hostGroupFilter,
 		nil,
 	)
 	if err == nil {
-		return ldapRule, nil
+		return hostGroup, nil
 	}
 
 	if ldap3.IsErrorAnyOf(err, ldap3.LDAPResultNoSuchObject) {
 		filter := fmt.Sprintf(ipaUniqueIDFilter, resourceId.Resource)
-		ldapRules, _, err := r.client.LdapSearch(
+		hostGroups, _, err := r.client.LdapSearch(
 			ctx,
 			ldap3.ScopeWholeSubtree,
 			r.baseDN,
@@ -377,15 +380,15 @@ func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l 
 			l.Error("baton-ipa: failed to get host group", zap.String("host_group_dn", hostGroupDN), zap.Error(err))
 			return nil, err
 		}
-		if len(ldapRules) == 0 {
+		if len(hostGroups) == 0 {
 			notFoundError := status.Errorf(codes.NotFound, "baton-ipa: no such object")
 			return nil, notFoundError
 		}
-		if len(ldapRules) > 1 {
+		if len(hostGroups) > 1 {
 			l.Error("baton-ipa: multiple host groups found", zap.String("host_group_dn", hostGroupDN), zap.Error(err))
 			return nil, fmt.Errorf("baton-ipa: multiple host groups found")
 		}
-		return ldapRules[0], nil
+		return hostGroups[0], nil
 	}
 
 	return nil, err
