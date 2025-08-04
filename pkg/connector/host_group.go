@@ -71,6 +71,10 @@ func hostGroupResource(ctx context.Context, hostGroup *ldap.Entry) (*v2.Resource
 	return resource, nil
 }
 
+func inheritedHBACEntitlementID(hostGroupName string, hbacRuleName string) string {
+	return fmt.Sprintf("%s - %s", hostGroupName, hbacRuleName)
+}
+
 func (r *hostGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag, page, err := parsePageToken(pt.Token, &v2.ResourceId{ResourceType: resourceTypeHost.Id})
 	if err != nil {
@@ -209,7 +213,7 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 							Resource:     member.ipaUniqueID,
 						},
 					},
-					fmt.Sprintf("%s - %s", resource.DisplayName, accessRule), // host group - hbac rule
+					inheritedHBACEntitlementID(resource.DisplayName, accessRule),
 					ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
 					ent.WithDisplayName(fmt.Sprintf("%s host group %s HBAC rule", resource.DisplayName, accessRule)),
 					ent.WithDescription(fmt.Sprintf("Allows inherited access to %s via HBAC rule %s and host group %s", member.cn, accessRule, resource.DisplayName)),
@@ -219,6 +223,94 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	return rv, pageToken, nil, nil
+}
+
+func (r *hostGroupResourceType) processHbacRuleEntries(ctx context.Context, resource *v2.Resource, hbacRuleEntries []*ldap3.Entry) ([]*v2.Grant, error) {
+	l := ctxzap.Extract(ctx)
+	var grants []*v2.Grant
+
+	hostMembers, err := r.getHostGroupMembers(ctx, l, resource)
+	if err != nil {
+		return nil, fmt.Errorf("baton-ipa: failed to get host group members: %w", err)
+	}
+
+	for _, hbacRuleEntry := range hbacRuleEntries {
+		accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
+		userCategory := hbacRuleEntry.GetEqualFoldAttributeValue(attrHBACRuleUserCategory)
+
+		if userCategory == "all" { // access is granted to all users
+			grants = append(grants, grant.NewGrant(
+				resource,
+				accessRule,
+				&v2.ResourceId{
+					ResourceType: resourceTypeGroup.Id,
+					Resource:     internalAnyoneGroupID,
+				},
+				grant.WithAnnotation(&v2.GrantExpandable{
+					EntitlementIds: []string{
+						fmt.Sprintf("group:%s:member", internalAnyoneGroupID),
+					},
+				}),
+			))
+
+			// Apply the grant to each host in the host group
+			for _, host := range hostMembers {
+				grants = append(grants, grant.NewGrant(
+					&v2.Resource{
+						Id: &v2.ResourceId{
+							ResourceType: resourceTypeHost.Id,
+							Resource:     host.ipaUniqueID,
+						},
+					},
+					inheritedHBACEntitlementID(resource.DisplayName, accessRule),
+					&v2.ResourceId{
+						ResourceType: resourceTypeGroup.Id,
+						Resource:     internalAnyoneGroupID,
+					},
+					grant.WithAnnotation(&v2.GrantExpandable{
+						EntitlementIds: []string{
+							fmt.Sprintf("group:%s:member", internalAnyoneGroupID),
+						},
+					}),
+				))
+			}
+		} else { // access is granted to specific users
+			members := parseValues(hbacRuleEntry, []string{attrHBACRuleMemberUser})
+
+			// for each member, lookup the ipaUniqueID and resource type
+			for _, member := range members.ToSlice() {
+				m, err := r.ipaObjectCache.get(ctx, member)
+				if err != nil {
+					return nil, fmt.Errorf("baton-ipa: failed to get member %s: %w", member, err)
+				}
+
+				grant, err := newHbacRuleGrantFromDN(resource, accessRule, m.ipaUniqueID, m.resourceType)
+				if err != nil {
+					return nil, fmt.Errorf("baton-ipa: failed to create grant for member %s: %w", member, err)
+				}
+
+				grants = append(grants, grant)
+
+				// Apply the grant to each host in the host group
+				for _, host := range hostMembers {
+					hostResource := &v2.Resource{
+						Id: &v2.ResourceId{
+							ResourceType: resourceTypeHost.Id,
+							Resource:     host.ipaUniqueID,
+						},
+					}
+					entitlementID := inheritedHBACEntitlementID(resource.DisplayName, accessRule)
+					grant, err := newHbacRuleGrantFromDN(hostResource, entitlementID, m.ipaUniqueID, m.resourceType)
+					if err != nil {
+						return nil, fmt.Errorf("baton-ipa: failed to create grant for host %s: %w", host.ipaUniqueID, err)
+					}
+					grants = append(grants, grant)
+				}
+			}
+		}
+	}
+
+	return grants, nil
 }
 
 func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
@@ -325,46 +417,12 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rules in '%s': %w", r.baseDN.String(), err)
 		}
 
-		for _, hbacRuleEntry := range hbacRuleEntries {
-			accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
-			userCategory := hbacRuleEntry.GetEqualFoldAttributeValue(attrHBACRuleUserCategory)
-
-			if userCategory == "all" { // access is granted to all users
-				grantOpts := []grant.GrantOption{}
-				grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
-					EntitlementIds: []string{
-						fmt.Sprintf("group:%s:member", internalAnyoneGroupID),
-					},
-				}))
-				grants = append(grants, grant.NewGrant(
-					&v2.Resource{
-						Id: resource.Id,
-					},
-					accessRule,
-					&v2.ResourceId{
-						ResourceType: resourceTypeGroup.Id,
-						Resource:     internalAnyoneGroupID,
-					},
-					grantOpts...,
-				))
-			} else { // access is granted to specific users
-				members := parseValues(hbacRuleEntry, []string{attrHBACRuleMemberUser})
-
-				// for each member, lookup the ipaUniqueID and resource type
-				for _, member := range members.ToSlice() {
-					m, err := r.ipaObjectCache.get(ctx, member)
-					if err != nil {
-						return nil, "", nil, fmt.Errorf("baton-ipa: failed to get member %s: %w", member, err)
-					}
-
-					grant, err := newHbacRuleGrantFromDN(resource, accessRule, m.ipaUniqueID, m.resourceType)
-					if err != nil {
-						return nil, "", nil, fmt.Errorf("baton-ipa: failed to create grant for member %s: %w", member, err)
-					}
-
-					grants = append(grants, grant)
-				}
+		if len(hbacRuleEntries) > 0 {
+			dynamicGrants, err := r.processHbacRuleEntries(ctx, resource, hbacRuleEntries)
+			if err != nil {
+				return nil, "", nil, err
 			}
+			grants = append(grants, dynamicGrants...)
 		}
 
 		pageToken, err = bag.NextToken(nextPage)
