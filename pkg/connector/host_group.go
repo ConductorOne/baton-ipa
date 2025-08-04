@@ -483,9 +483,9 @@ func (r *hostGroupResourceType) getHostGroupMembers(ctx context.Context, l *zap.
 		return nil, fmt.Errorf("baton-ipa: failed to get host group members: %w", err)
 	}
 
-	memberDNs := parseValues(hostGroup, []string{attrHostGroupMember})
-	members := make([]*ipaObject, 0, len(memberDNs.ToSlice()))
-	for _, memberDN := range memberDNs.ToSlice() {
+	memberDistinguishedNames := parseValues(hostGroup, []string{attrHostGroupMember})
+	members := make([]*ipaObject, 0, len(memberDistinguishedNames.ToSlice()))
+	for _, memberDN := range memberDistinguishedNames.ToSlice() {
 		member, err := r.ipaObjectCache.get(ctx, memberDN)
 		if err != nil {
 			return nil, fmt.Errorf("baton-ipa: failed to get host group member: %w", err)
