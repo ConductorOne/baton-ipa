@@ -108,6 +108,7 @@ func (r *hostGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *
 }
 
 func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
 	var rv []*v2.Entitlement
 
 	bag := &pagination.Bag{}
@@ -170,12 +171,36 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list hbac rules in '%s': %w", r.baseDN.String(), err)
 		}
 
+		pageToken, err = bag.NextToken(nextPage)
+		if err != nil {
+			return nil, "", nil, err
+		}
+
+		if len(hbacRuleEntries) == 0 {
+			return rv, pageToken, nil, nil
+		}
+
+		hostGroup, err := r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId())
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("baton-ipa: failed to get host group members: %w", err)
+		}
+
+		memberDNs := parseValues(hostGroup, []string{attrHostGroupMember})
+		members := make([]*ipaObject, 0, len(memberDNs.ToSlice()))
+		for i, memberDN := range memberDNs.ToSlice() {
+			member, err := r.ipaObjectCache.get(ctx, memberDN)
+			if err != nil {
+				return nil, "", nil, fmt.Errorf("baton-ipa: failed to get host group member: %w", err)
+			}
+			members[i] = member
+		}
+
 		for _, hbacRuleEntry := range hbacRuleEntries {
 			accessRule := hbacRuleEntry.GetEqualFoldAttributeValue(attrCommonName)
 			assignmentOptions := []ent.EntitlementOption{
 				ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
 				ent.WithDisplayName(fmt.Sprintf("%s host group %s HBAC rule", resource.DisplayName, accessRule)),
-				ent.WithDescription(fmt.Sprintf("HBAC rule %s is applied to", accessRule)),
+				ent.WithDescription(fmt.Sprintf("Allows access to host group via HBAC rule %s", accessRule)),
 			}
 
 			rv = append(rv, ent.NewAssignmentEntitlement(
@@ -184,12 +209,21 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 				assignmentOptions...,
 			))
 
-			// TODO: for each rule, create an entitlement for each host in the host group
-		}
-
-		pageToken, err = bag.NextToken(nextPage)
-		if err != nil {
-			return nil, "", nil, err
+			// Create corresponding entitlements for each host in the host group
+			for _, member := range members {
+				rv = append(rv, ent.NewAssignmentEntitlement(
+					&v2.Resource{
+						Id: &v2.ResourceId{
+							ResourceType: resourceTypeHost.Id,
+							Resource:     member.ipaUniqueID,
+						},
+					},
+					fmt.Sprintf("%s - %s", resource.DisplayName, accessRule), // host group - hbac rule
+					ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+					ent.WithDisplayName(fmt.Sprintf("%s host group %s HBAC rule", resource.DisplayName, accessRule)),
+					ent.WithDescription(fmt.Sprintf("Allows inherited access to %s via HBAC rule %s and host group %s", member.cn, accessRule, resource.DisplayName)),
+				))
+			}
 		}
 	}
 
