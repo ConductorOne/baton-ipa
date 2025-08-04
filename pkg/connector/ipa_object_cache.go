@@ -22,6 +22,7 @@ type ipaObjectCache struct {
 type ipaObject struct {
 	ipaUniqueID  string
 	dn           string
+	cn           string
 	resourceType *v2.ResourceType
 }
 
@@ -43,12 +44,13 @@ func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error)
 		return m, nil
 	}
 
-	entry, err := c.client.LdapGetWithStringDN(ctx, dn, "", []string{attrIPAUniqueID, attrObjectClass})
+	entry, err := c.client.LdapGetWithStringDN(ctx, dn, "", []string{attrIPAUniqueID, attrObjectClass, attrCommonName})
 	if err != nil {
 		return nil, fmt.Errorf("baton-ipa: failed to search for entry %s: %w", dn, err)
 	}
 
 	ipaUniqueID := entry.GetEqualFoldAttributeValue(attrIPAUniqueID)
+	cn := entry.GetEqualFoldAttributeValue(attrCommonName)
 
 	var resourceType *v2.ResourceType
 	for _, objectClass := range entry.GetAttributeValues(attrObjectClass) {
@@ -65,6 +67,7 @@ func (c *ipaObjectCache) get(ctx context.Context, dn string) (*ipaObject, error)
 	m = &ipaObject{
 		ipaUniqueID:  ipaUniqueID,
 		dn:           dn,
+		cn:           cn,
 		resourceType: resourceType,
 	}
 
