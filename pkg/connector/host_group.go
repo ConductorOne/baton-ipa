@@ -180,19 +180,10 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 			return rv, pageToken, nil, nil
 		}
 
-		hostGroup, err := r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId())
+		// Get all hosts in the host group
+		members, err := r.getHostGroupMembers(ctx, l, resource)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("baton-ipa: failed to get host group members: %w", err)
-		}
-
-		memberDNs := parseValues(hostGroup, []string{attrHostGroupMember})
-		members := make([]*ipaObject, 0, len(memberDNs.ToSlice()))
-		for i, memberDN := range memberDNs.ToSlice() {
-			member, err := r.ipaObjectCache.get(ctx, memberDN)
-			if err != nil {
-				return nil, "", nil, fmt.Errorf("baton-ipa: failed to get host group member: %w", err)
-			}
-			members[i] = member
+			return nil, "", nil, err
 		}
 
 		for _, hbacRuleEntry := range hbacRuleEntries {
@@ -426,6 +417,25 @@ func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l 
 	}
 
 	return nil, err
+}
+
+func (r *hostGroupResourceType) getHostGroupMembers(ctx context.Context, l *zap.Logger, resource *v2.Resource) ([]*ipaObject, error) {
+	hostGroup, err := r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId())
+	if err != nil {
+		return nil, fmt.Errorf("baton-ipa: failed to get host group members: %w", err)
+	}
+
+	memberDNs := parseValues(hostGroup, []string{attrHostGroupMember})
+	members := make([]*ipaObject, 0, len(memberDNs.ToSlice()))
+	for i, memberDN := range memberDNs.ToSlice() {
+		member, err := r.ipaObjectCache.get(ctx, memberDN)
+		if err != nil {
+			return nil, fmt.Errorf("baton-ipa: failed to get host group member: %w", err)
+		}
+		members[i] = member
+	}
+
+	return members, nil
 }
 
 func newHostGroupGrantFromEntry(hostGroupResource *v2.Resource, entry *ldap3.Entry) *v2.Grant {
