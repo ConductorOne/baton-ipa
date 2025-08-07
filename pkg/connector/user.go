@@ -306,8 +306,7 @@ func (u *userResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 
 		ur, err := userResource(ctx, userEntry)
 		if err != nil {
-			l.Warn("baton-ipa: failed to create user resource", zap.String("dn", userEntry.DN), zap.Error(err))
-			continue
+			return nil, pageToken, nil, err
 		}
 
 		rv = append(rv, ur)
