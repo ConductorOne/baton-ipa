@@ -10,6 +10,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	grant "github.com/conductorone/baton-sdk/pkg/types/grant"
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	mapset "github.com/deckarep/golang-set/v2"
 	ldap3 "github.com/go-ldap/ldap/v3"
@@ -367,7 +368,21 @@ func (u *userResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 }
 
 func (u *userResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+	grants := []*v2.Grant{}
+
+	// Automatically grant membership to Anyone group
+	grants = append(grants, grant.NewGrant(
+		&v2.Resource{
+			Id: &v2.ResourceId{
+				ResourceType: resourceTypeGroup.Id,
+				Resource:     internalAnyoneGroupID,
+			},
+		},
+		groupMemberEntitlement,
+		resource,
+	))
+
+	return grants, "", nil, nil
 }
 
 func userBuilder(client *ldap.Client, userSearchDN *ldap3.DN, disableOperationalAttrs bool) *userResourceType {

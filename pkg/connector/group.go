@@ -32,6 +32,9 @@ const (
 
 	groupMemberEntitlement  = "member"
 	groupManagerEntitlement = "manager"
+
+	internalAnyoneGroup   = "Anyone"
+	internalAnyoneGroupID = "anyone-group"
 )
 
 type groupResourceType struct {
@@ -130,6 +133,26 @@ func (g *groupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagi
 		rv = append(rv, gr)
 	}
 
+	if pageToken == "" {
+		profile := map[string]interface{}{
+			"group_description": "Internal group for anyone",
+		}
+		groupTraitOptions := []rs.GroupTraitOption{
+			rs.WithGroupProfile(profile),
+		}
+		resource, err := rs.NewGroupResource(
+			internalAnyoneGroup,
+			resourceTypeGroup,
+			internalAnyoneGroupID,
+			groupTraitOptions,
+			rs.WithDescription("Internal group for anyone"),
+		)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		rv = append(rv, resource)
+	}
+
 	return rv, pageToken, nil, nil
 }
 
@@ -174,14 +197,16 @@ func (g *groupResourceType) Entitlements(ctx context.Context, resource *v2.Resou
 		assignmentOptions...,
 	))
 
-	// create manager entitlement
-	rv = append(rv, ent.NewAssignmentEntitlement(
-		resource,
-		groupManagerEntitlement,
-		ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
-		ent.WithDisplayName(fmt.Sprintf("%s Group %s", resource.DisplayName, groupManagerEntitlement)),
-		ent.WithDescription(fmt.Sprintf("Manage %s group in IPA", resource.DisplayName)),
-	))
+	if resource.Id.Resource != internalAnyoneGroupID {
+		// create manager entitlement
+		rv = append(rv, ent.NewAssignmentEntitlement(
+			resource,
+			groupManagerEntitlement,
+			ent.WithGrantableTo(resourceTypeUser, resourceTypeGroup),
+			ent.WithDisplayName(fmt.Sprintf("%s Group %s", resource.DisplayName, groupManagerEntitlement)),
+			ent.WithDescription(fmt.Sprintf("Manage %s group in IPA", resource.DisplayName)),
+		))
+	}
 
 	return rv, "", nil, nil
 }
@@ -226,6 +251,10 @@ func newGrantFromEntry(groupResource *v2.Resource, entry *ldap3.Entry, entitleme
 
 func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
+
+	if resource.Id.Resource == internalAnyoneGroupID {
+		return nil, "", nil, nil
+	}
 
 	externalId := resource.GetExternalId()
 	if externalId == nil {

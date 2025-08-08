@@ -21,7 +21,6 @@ var (
 		Traits: []v2.ResourceType_Trait{
 			v2.ResourceType_TRAIT_USER,
 		},
-		Annotations: annotationsForUserResourceType(),
 	}
 	resourceTypeGroup = &v2.ResourceType{
 		Id:          "group",
@@ -52,8 +51,6 @@ var (
 		},
 	}
 )
-
-const hbacRuleEntryType = "hbac_rule"
 
 type LDAP struct {
 	client *ldap.Client

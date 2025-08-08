@@ -8,7 +8,13 @@ import (
 )
 
 const (
-	hbacRuleFilter = "(&(objectClass=ipahbacrule))"
+	hbacRuleEntryType = "hbac_rule"
+
+	hbacRuleFilter        = "(objectClass=ipahbacrule)"
+	hbacRuleHostFilter    = "(&(objectClass=ipahbacrule)(memberHost=%s))"
+	hbacRuleAnyHostFilter = "(&(objectClass=ipahbacrule)(hostCategory=all))"
+
+	attrHBACRuleUserCategory = "userCategory"
 )
 
 func newHbacRuleGrantFromDN(resource *v2.Resource, accessRule string, ipaUniqueID string, resourceType *v2.ResourceType) (*v2.Grant, error) {
