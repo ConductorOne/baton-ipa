@@ -35,8 +35,6 @@ type hostGroupResourceType struct {
 
 	// Member lookup by DN.
 	ipaObjectCache *ipaObjectCache
-
-	syncAllHBACRules bool
 }
 
 func (r *hostGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -169,13 +167,7 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 			return nil, "", nil, fmt.Errorf("baton-ipa: host group resource %s has no external ID", resource.DisplayName)
 		}
 
-		var filter string
-		switch {
-		case r.syncAllHBACRules:
-			filter = hbacRuleFilter
-		default:
-			filter = fmt.Sprintf(hbacRuleHostFilter, hostGroupDN)
-		}
+		filter := fmt.Sprintf(hbacRuleHostFilter, hostGroupDN)
 
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
@@ -562,12 +554,11 @@ func newHostGroupGrantFromDN(hostGroupResource *v2.Resource, ipaUniqueID string,
 	return g
 }
 
-func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache, syncAllHBACRules bool) *hostGroupResourceType {
+func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache) *hostGroupResourceType {
 	return &hostGroupResourceType{
-		resourceType:     resourceTypeHostGroup,
-		client:           client,
-		baseDN:           baseDN,
-		ipaObjectCache:   ipaObjectCache,
-		syncAllHBACRules: syncAllHBACRules,
+		resourceType:   resourceTypeHostGroup,
+		client:         client,
+		baseDN:         baseDN,
+		ipaObjectCache: ipaObjectCache,
 	}
 }

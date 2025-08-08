@@ -29,8 +29,6 @@ type hostResourceType struct {
 
 	// Member lookup by DN.
 	ipaObjectCache *ipaObjectCache
-
-	syncAllHBACRules bool
 }
 
 func (r *hostResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -126,12 +124,9 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 	}
 
 	var filter string
-	switch {
-	case r.syncAllHBACRules:
-		filter = hbacRuleFilter
-	case isAnyHost:
+	if isAnyHost {
 		filter = hbacRuleAnyHostFilter
-	default:
+	} else {
 		filter = fmt.Sprintf(hbacRuleHostFilter, hostDN)
 	}
 
@@ -253,12 +248,11 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 	return grants, pageToken, nil, nil
 }
 
-func hostBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache, syncAllHBACRules bool) *hostResourceType {
+func hostBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache) *hostResourceType {
 	return &hostResourceType{
-		resourceType:     resourceTypeHost,
-		client:           client,
-		baseDN:           baseDN,
-		ipaObjectCache:   ipaObjectCache,
-		syncAllHBACRules: syncAllHBACRules,
+		resourceType:   resourceTypeHost,
+		client:         client,
+		baseDN:         baseDN,
+		ipaObjectCache: ipaObjectCache,
 	}
 }
