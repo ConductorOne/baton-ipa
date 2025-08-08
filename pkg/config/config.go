@@ -157,6 +157,7 @@ func New(ctx context.Context, v *viper.Viper) (*Config, error) {
 
 	rv.InsecureSkipVerify = v.GetBool(insecureSkipVerifyField.FieldName)
 	rv.DisableOperationalAttrs = v.GetBool(disableOperationalAttrsField.FieldName)
+
 	return rv, nil
 }
 
