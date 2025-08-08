@@ -29,6 +29,8 @@ type hostResourceType struct {
 
 	// Member lookup by DN.
 	ipaObjectCache *ipaObjectCache
+
+	syncAllHBACRules bool
 }
 
 func (r *hostResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -117,11 +119,27 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		return nil, "", nil, err
 	}
 
+	hostDN := resource.GetExternalId().GetId()
+	isAnyHost := resource.Id.Resource == internalAnyHostID
+	if hostDN == "" && !isAnyHost {
+		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
+	}
+
+	var filter string
+	switch {
+	case r.syncAllHBACRules:
+		filter = hbacRuleFilter
+	case isAnyHost:
+		filter = hbacRuleAnyHostFilter
+	default:
+		filter = fmt.Sprintf(hbacRuleHostFilter, hostDN)
+	}
+
 	hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 		ctx,
 		ldap3.ScopeWholeSubtree,
 		r.baseDN,
-		hbacRuleFilter,
+		filter,
 		nil,
 		page,
 		ResourcesPageSize,
@@ -235,11 +253,12 @@ func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 	return grants, pageToken, nil, nil
 }
 
-func hostBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache) *hostResourceType {
+func hostBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache, syncAllHBACRules bool) *hostResourceType {
 	return &hostResourceType{
-		resourceType:   resourceTypeHost,
-		client:         client,
-		baseDN:         baseDN,
-		ipaObjectCache: ipaObjectCache,
+		resourceType:     resourceTypeHost,
+		client:           client,
+		baseDN:           baseDN,
+		ipaObjectCache:   ipaObjectCache,
+		syncAllHBACRules: syncAllHBACRules,
 	}
 }

@@ -31,6 +31,8 @@ var (
 	//revive:disable-next-line:line-length-limit
 	disableOperationalAttrsField = field.BoolField("disable-operational-attrs", field.WithDescription("Disable fetching operational attributes. Some LDAP servers don't support these. If disabled, created_at and last login info will not be fetched"))
 	insecureSkipVerifyField      = field.BoolField("insecure-skip-verify", field.WithDescription("If connecting over TLS, skip verifying the server certificate"))
+
+	syncAllHBACRulesField = field.BoolField("sync-all-hbac-rules", field.WithDescription("Sync all HBAC rules"))
 )
 
 var (
@@ -55,6 +57,7 @@ var ConfigurationFields = []field.SchemaField{
 	insecureSkipVerifyField,
 	disableOperationalAttrsField,
 	filterField,
+	syncAllHBACRulesField,
 }
 
 var ConfigRelations = []field.SchemaFieldRelationship{
@@ -157,7 +160,7 @@ func New(ctx context.Context, v *viper.Viper) (*Config, error) {
 
 	rv.InsecureSkipVerify = v.GetBool(insecureSkipVerifyField.FieldName)
 	rv.DisableOperationalAttrs = v.GetBool(disableOperationalAttrsField.FieldName)
-
+	rv.SyncAllHBACRules = v.GetBool(syncAllHBACRulesField.FieldName)
 	return rv, nil
 }
 
@@ -176,4 +179,6 @@ type Config struct {
 
 	DisableOperationalAttrs bool
 	InsecureSkipVerify      bool
+
+	SyncAllHBACRules bool
 }
