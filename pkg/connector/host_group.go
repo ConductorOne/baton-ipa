@@ -35,6 +35,8 @@ type hostGroupResourceType struct {
 
 	// Member lookup by DN.
 	ipaObjectCache *ipaObjectCache
+
+	syncAllHBACRules bool
 }
 
 func (r *hostGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -162,11 +164,19 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	if bag.Current() != nil && bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic entitlements for host group hbac rules
+		var filter string
+		switch {
+		case r.syncAllHBACRules:
+			filter = hbacRuleFilter
+		default:
+			filter = fmt.Sprintf(hbacRuleHostFilter, resource.Id.Resource)
+		}
+
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
 			ldap3.ScopeWholeSubtree,
 			r.baseDN,
-			hbacRuleFilter,
+			filter,
 			nil,
 			bag.Current().Token,
 			ResourcesPageSize,
@@ -547,11 +557,12 @@ func newHostGroupGrantFromDN(hostGroupResource *v2.Resource, ipaUniqueID string,
 	return g
 }
 
-func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache) *hostGroupResourceType {
+func hostGroupBuilder(client *ldap.Client, baseDN *ldap3.DN, ipaObjectCache *ipaObjectCache, syncAllHBACRules bool) *hostGroupResourceType {
 	return &hostGroupResourceType{
-		resourceType:   resourceTypeHostGroup,
-		client:         client,
-		baseDN:         baseDN,
-		ipaObjectCache: ipaObjectCache,
+		resourceType:     resourceTypeHostGroup,
+		client:           client,
+		baseDN:           baseDN,
+		ipaObjectCache:   ipaObjectCache,
+		syncAllHBACRules: syncAllHBACRules,
 	}
 }

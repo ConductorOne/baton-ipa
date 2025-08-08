@@ -25,8 +25,8 @@ func (l *FreeIPA) ResourceSyncers(ctx context.Context) []connectorbuilder.Resour
 		userBuilder(l.client, l.config.UserSearchDN, l.config.DisableOperationalAttrs),
 		groupBuilder(l.client, l.config.GroupSearchDN, l.config.UserSearchDN),
 		roleBuilder(l.client, l.config.RoleSearchDN),
-		hostBuilder(l.client, l.config.BaseDN, ipaObjectCache),
-		hostGroupBuilder(l.client, l.config.BaseDN, ipaObjectCache),
+		hostBuilder(l.client, l.config.BaseDN, ipaObjectCache, l.config.SyncAllHBACRules),
+		hostGroupBuilder(l.client, l.config.BaseDN, ipaObjectCache, l.config.SyncAllHBACRules),
 	}
 }
 
