@@ -14,50 +14,12 @@ import (
 	"go.uber.org/zap"
 )
 
-var (
-	resourceTypeUser = &v2.ResourceType{
-		Id:          "user",
-		DisplayName: "User",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_USER,
-		},
-	}
-	resourceTypeGroup = &v2.ResourceType{
-		Id:          "group",
-		DisplayName: "Group",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_GROUP,
-		},
-	}
-	resourceTypeRole = &v2.ResourceType{
-		Id:          "role",
-		DisplayName: "Role",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_ROLE,
-		},
-	}
-	resourceTypeHost = &v2.ResourceType{
-		Id:          "host",
-		DisplayName: "Host",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_UNSPECIFIED,
-		},
-	}
-	resourceTypeHostGroup = &v2.ResourceType{
-		Id:          "host_group",
-		DisplayName: "Host Group",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_UNSPECIFIED,
-		},
-	}
-)
-
-type LDAP struct {
+type FreeIPA struct {
 	client *ldap.Client
 	config *config.Config
 }
 
-func (l *LDAP) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+func (l *FreeIPA) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	ipaObjectCache := newIPAObjectCache(l.client, l.config.BaseDN)
 	return []connectorbuilder.ResourceSyncer{
 		userBuilder(l.client, l.config.UserSearchDN, l.config.DisableOperationalAttrs),
@@ -68,16 +30,16 @@ func (l *LDAP) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceS
 	}
 }
 
-func (l *LDAP) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
+func (l *FreeIPA) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	return &v2.ConnectorMetadata{
 		DisplayName: "IPA",
 		// TODO: add better description
-		Description: "IPA connector for Baton",
+		Description: "FreeIPA connector for Baton",
 	}, nil
 }
 
 // Validates that the user has read access to all relevant tables (more information in the readme).
-func (l *LDAP) Validate(ctx context.Context) (annotations.Annotations, error) {
+func (l *FreeIPA) Validate(ctx context.Context) (annotations.Annotations, error) {
 	_, _, err := l.client.LdapSearch(
 		ctx,
 		ldap3.ScopeBaseObject,
@@ -94,7 +56,7 @@ func (l *LDAP) Validate(ctx context.Context) (annotations.Annotations, error) {
 }
 
 // New returns the IPA connector.
-func New(ctx context.Context, cf *config.Config) (*LDAP, error) {
+func New(ctx context.Context, cf *config.Config) (*FreeIPA, error) {
 	l := ctxzap.Extract(ctx)
 	l.Debug("creating new IPA connector",
 		zap.Stringer("server_url", cf.ServerURL),
@@ -111,7 +73,7 @@ func New(ctx context.Context, cf *config.Config) (*LDAP, error) {
 		return nil, err
 	}
 
-	return &LDAP{
+	return &FreeIPA{
 		client: ldapClient,
 		config: cf,
 	}, nil

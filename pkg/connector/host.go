@@ -117,11 +117,24 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		return nil, "", nil, err
 	}
 
+	hostDN := resource.GetExternalId().GetId()
+	isAnyHost := resource.Id.Resource == internalAnyHostID
+	if hostDN == "" && !isAnyHost {
+		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
+	}
+
+	var filter string
+	if isAnyHost {
+		filter = hbacRuleAnyHostFilter
+	} else {
+		filter = fmt.Sprintf(hbacRuleHostFilter, hostDN)
+	}
+
 	hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 		ctx,
 		ldap3.ScopeWholeSubtree,
 		r.baseDN,
-		hbacRuleFilter,
+		filter,
 		nil,
 		page,
 		ResourcesPageSize,

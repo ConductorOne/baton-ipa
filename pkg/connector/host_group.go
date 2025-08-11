@@ -162,11 +162,18 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	if bag.Current() != nil && bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic entitlements for host group hbac rules
+		hostGroupDN := resource.GetExternalId().GetId()
+		if hostGroupDN == "" {
+			return nil, "", nil, fmt.Errorf("baton-ipa: host group resource %s has no external ID", resource.DisplayName)
+		}
+
+		filter := fmt.Sprintf(hbacRuleHostFilter, hostGroupDN)
+
 		hbacRuleEntries, nextPage, err := r.client.LdapSearch(
 			ctx,
 			ldap3.ScopeWholeSubtree,
 			r.baseDN,
-			hbacRuleFilter,
+			filter,
 			nil,
 			bag.Current().Token,
 			ResourcesPageSize,
