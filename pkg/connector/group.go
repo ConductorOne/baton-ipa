@@ -389,17 +389,22 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 		return nil, fmt.Errorf("baton-ipa: only users and groups can have group membership granted")
 	}
 
-	groupDN := entitlement.Resource.GetExternalId().Id
+	entitlementExternalId := entitlement.Resource.GetExternalId()
+	if entitlementExternalId == nil {
+		return nil, fmt.Errorf("baton-ipa: entitlement resource missing external ID")
+	}
+	groupDN := entitlementExternalId.Id
 
 	group, err := g.getGroup(ctx, groupDN)
 	if err != nil {
 		return nil, err
 	}
 
-	principalDN := principal.GetExternalId().Id
-	if principalDN == "" {
+	principalExternalId := principal.GetExternalId()
+	if principalExternalId == nil || principalExternalId.Id == "" {
 		return nil, fmt.Errorf("baton-ipa: principal %s has no external ID", principal.Id.Resource)
 	}
+	principalDN := principalExternalId.Id
 
 	targetAttr := attrGroupMember
 	if entitlement.Slug == groupManagerEntitlement {
@@ -437,17 +442,22 @@ func (g *groupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annota
 		return nil, fmt.Errorf("baton-ipa: only users and groups can have group membership revoked")
 	}
 
-	groupDN := entitlement.Resource.GetExternalId().Id
+	entitlementExternalId := entitlement.Resource.GetExternalId()
+	if entitlementExternalId == nil {
+		return nil, fmt.Errorf("baton-ipa: entitlement resource missing external ID")
+	}
+	groupDN := entitlementExternalId.Id
 
 	group, err := g.getGroup(ctx, groupDN)
 	if err != nil {
 		return nil, err
 	}
 
-	principalDN := principal.GetExternalId().Id
-	if principalDN == "" {
+	principalExternalId := principal.GetExternalId()
+	if principalExternalId == nil || principalExternalId.Id == "" {
 		return nil, fmt.Errorf("baton-ipa: principal %s has no external ID", principal.Id.Resource)
 	}
+	principalDN := principalExternalId.Id
 	principalDNArr := []string{principalDN}
 
 	targetAttr := attrGroupMember
