@@ -156,7 +156,7 @@ func (g *groupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagi
 	return rv, pageToken, nil, nil
 }
 
-func (g *groupResourceType) Get(ctx context.Context, resourceId *v2.ResourceId, parentResourceId *v2.ResourceId) (*v2.Resource, annotations.Annotations, error) {
+func (g *groupResourceType) Get(ctx context.Context, resourceId *v2.ResourceId, _ *v2.ResourceId) (*v2.Resource, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
 	l.Debug("getting group", zap.String("resource_id", resourceId.Resource))
@@ -181,7 +181,7 @@ func (g *groupResourceType) Get(ctx context.Context, resourceId *v2.ResourceId, 
 	return gr, nil, nil
 }
 
-func (g *groupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (g *groupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var rv []*v2.Entitlement
 
 	assignmentOptions := []ent.EntitlementOption{
@@ -389,6 +389,10 @@ func (g *groupResourceType) Grant(ctx context.Context, principal *v2.Resource, e
 		return nil, fmt.Errorf("baton-ipa: only users and groups can have group membership granted")
 	}
 
+	if entitlement.Resource.Id.Resource == internalAnyoneGroupID {
+		return nil, fmt.Errorf("baton-ipa: the 'anyone' group is virtual and does not support provisioning")
+	}
+
 	entitlementExternalId := entitlement.Resource.GetExternalId()
 	if entitlementExternalId == nil {
 		return nil, fmt.Errorf("baton-ipa: entitlement resource missing external ID")
@@ -440,6 +444,10 @@ func (g *groupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annota
 
 	if principal.Id.ResourceType != resourceTypeUser.Id && principal.Id.ResourceType != resourceTypeGroup.Id {
 		return nil, fmt.Errorf("baton-ipa: only users and groups can have group membership revoked")
+	}
+
+	if entitlement.Resource.Id.Resource == internalAnyoneGroupID {
+		return nil, fmt.Errorf("baton-ipa: the 'anyone' group is virtual and does not support provisioning")
 	}
 
 	entitlementExternalId := entitlement.Resource.GetExternalId()
