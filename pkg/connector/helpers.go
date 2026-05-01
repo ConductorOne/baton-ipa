@@ -11,6 +11,8 @@ import (
 
 var ResourcesPageSize uint32 = 50
 
+const pathProfileProperty = "path"
+
 func splitFullName(fullName string) (string, string) {
 	parts := strings.Split(fullName, " ")
 

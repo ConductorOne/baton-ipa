@@ -63,7 +63,7 @@ func groupResource(ctx context.Context, group *ldap.Entry) (*v2.Resource, error)
 	groupId := parseValue(group, []string{attrGroupIdPosix})
 	description := group.GetEqualFoldAttributeValue(attrGroupDescription)
 	profile := map[string]interface{}{
-		"path": groupDN,
+		pathProfileProperty: groupDN,
 	}
 
 	groupRsTraitOptions := []rs.ResourceOption{}

@@ -46,8 +46,8 @@ func roleResource(ctx context.Context, role *ldap.Entry) (*v2.Resource, error) {
 	}
 	roleDN := rdn.String()
 	profile := map[string]interface{}{
-		"role_description": role.GetEqualFoldAttributeValue(attrRoleDescription),
-		"path":             roleDN,
+		"role_description":  role.GetEqualFoldAttributeValue(attrRoleDescription),
+		pathProfileProperty: roleDN,
 	}
 
 	roleTraitOptions := []rs.RoleTraitOption{
