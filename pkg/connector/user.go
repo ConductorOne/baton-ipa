@@ -171,10 +171,10 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 	userDN := udn.String()
 
 	profile := map[string]interface{}{
-		"user_id":    userId,
-		"first_name": firstName,
-		"last_name":  lastName,
-		"path":       userDN,
+		"user_id":           userId,
+		"first_name":        firstName,
+		"last_name":         lastName,
+		pathProfileProperty: userDN,
 	}
 
 	for _, v := range user.Attributes {

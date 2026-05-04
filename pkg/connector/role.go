@@ -46,8 +46,8 @@ func roleResource(ctx context.Context, role *ldap.Entry) (*v2.Resource, error) {
 	}
 	roleDN := rdn.String()
 	profile := map[string]interface{}{
-		"role_description": role.GetEqualFoldAttributeValue(attrRoleDescription),
-		"path":             roleDN,
+		"role_description":  role.GetEqualFoldAttributeValue(attrRoleDescription),
+		pathProfileProperty: roleDN,
 	}
 
 	roleTraitOptions := []rs.RoleTraitOption{
@@ -132,7 +132,11 @@ func (r *roleResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 
 func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
-	rawDN := resource.GetExternalId().Id
+	resourceExternalId := resource.GetExternalId()
+	if resourceExternalId == nil {
+		return nil, "", nil, fmt.Errorf("baton-ipa: role resource missing external ID")
+	}
+	rawDN := resourceExternalId.Id
 	roleDN, err := ldap.CanonicalizeDN(rawDN)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("baton-ipa: invalid role DN: '%s' in role grants: %w", resource.Id.Resource, err)
@@ -236,9 +240,17 @@ func newRoleGrantFromDN(roleResource *v2.Resource, ipaUniqueID string, resourceT
 }
 
 func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	roleDN := entitlement.Resource.GetExternalId().Id
+	entitlementExternalId := entitlement.Resource.GetExternalId()
+	if entitlementExternalId == nil {
+		return nil, fmt.Errorf("baton-ipa: entitlement resource missing external ID")
+	}
+	roleDN := entitlementExternalId.Id
 
-	principalDNArr := []string{principal.GetExternalId().Id}
+	principalExternalId := principal.GetExternalId()
+	if principalExternalId == nil {
+		return nil, fmt.Errorf("baton-ipa: principal missing external ID")
+	}
+	principalDNArr := []string{principalExternalId.Id}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Add(attrRoleMember, principalDNArr)
 
@@ -258,9 +270,17 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 	entitlement := grant.Entitlement
 	principal := grant.Principal
 
-	roleDN := entitlement.Resource.GetExternalId().Id
+	entitlementExternalId := entitlement.Resource.GetExternalId()
+	if entitlementExternalId == nil {
+		return nil, fmt.Errorf("baton-ipa: entitlement resource missing external ID")
+	}
+	roleDN := entitlementExternalId.Id
 
-	principalDNArr := []string{principal.GetExternalId().Id}
+	principalExternalId := principal.GetExternalId()
+	if principalExternalId == nil {
+		return nil, fmt.Errorf("baton-ipa: principal missing external ID")
+	}
+	principalDNArr := []string{principalExternalId.Id}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Delete(attrRoleMember, principalDNArr)
 

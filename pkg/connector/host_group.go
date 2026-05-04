@@ -444,6 +444,9 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 // getHostGroupWithFallback get an LDAP entry for a host group.
 // It first tries to get the host group by its DN. If that fails, it tries to get the host group by its IPA unique ID.
 func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l *zap.Logger, resourceId *v2.ResourceId, externalId *v2.ExternalId) (*ldap3.Entry, error) {
+	if externalId == nil {
+		return nil, fmt.Errorf("baton-ipa: host group resource missing external ID")
+	}
 	hostGroupDN := externalId.Id
 	hostGroup, err := r.client.LdapGetWithStringDN(
 		ctx,
