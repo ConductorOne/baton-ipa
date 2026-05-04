@@ -10,7 +10,7 @@ Check out [Baton](https://github.com/conductorone/baton) to learn more about the
 
 ## Credentials
 
-To access the IPA server, you must provide the username and password you use to login to the IPA server. 
+To access the IPA server, you must provide the username and password you use to log in to the IPA server. 
 
 # Getting Started
 
