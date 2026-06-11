@@ -7,62 +7,94 @@ on:
       - main
 
 jobs:
+  # FreeIPA integration tests. These exercise the connector against a real
+  # FreeIPA directory and specifically cover the case where Grant/Revoke must
+  # resolve the LDAP DN from the resource trait profile "path" when ExternalId
+  # is nil (c1 service mode). See pkg/connector/integration_test.go.
   integration-tests:
-    if: false # Remove this line when enabling integration tests.
     runs-on: ubuntu-latest
+    # FreeIPA runs systemd inside the container. It is started here as a service
+    # container; the default command is `ipa-server-install`, driven unattended
+    # via IPA_SERVER_INSTALL_OPTS + PASSWORD. cgroup access is granted through
+    # the container options below (privileged mode is unsupported by the image).
+    services:
+      freeipa:
+        image: quay.io/freeipa/freeipa-server:almalinux-9
+        env:
+          PASSWORD: Secret123
+          IPA_SERVER_INSTALL_OPTS: "-U -r EXAMPLE.TEST --no-ntp --no-ui-redirect --skip-mem-check"
+        ports:
+          - "389:389"
+          - "636:636"
+        options: >-
+          --hostname ipa.example.test
+          --sysctl net.ipv6.conf.all.disable_ipv6=0
+          --cgroupns=host
+          --volume /sys/fs/cgroup:/sys/fs/cgroup:rw
+    env:
+      BATON_URL: "ldaps://localhost:636"
+      BATON_BIND_DN: "uid=admin,cn=users,cn=accounts,dc=example,dc=test"
+      BATON_BASE_DN: "dc=example,dc=test"
+      BATON_PASSWORD: "Secret123"
+      BATON_INSECURE_SKIP_VERIFY: "true"
+      FREEIPA_IMAGE: "quay.io/freeipa/freeipa-server:almalinux-9"
     steps:
-      - run: echo "Integration tests are disabled."
-  # test:
-  #   runs-on: ubuntu-latest
-  #   services:
-  #     freeipa:
-  #       image: quay.io/freeipa/freeipa-server:almalinux-10
-  #       ports:
-  #         - "389:389"
-  #         - "636:636"
-  #       env:
-  #         PASSWORD: Secret123
-  #   env:
-  #     BATON_PASSWORD: Secret123
-  #     BATON_BIND_DN: 'uid=admin,cn=users,cn=accounts,dc=example,dc=test'
-  #     BATON_URL: 'ldaps://freeipa'
-  #     BATON_INSECURE_SKIP_VERIFY: true
-  #   steps:
-  #     - name: Install Go
-  #       uses: actions/setup-go@v5
-  #       with:
-  #         go-version: 1.23.x
-  #     - name: Checkout code
-  #       uses: actions/checkout@v4
-  #     - name: Setup node.js
-  #       uses: actions/setup-node@v3
-  #       with:
-  #         node-version: '21.x'
-  #     - name: Setup FreeIPA
-  #       run: |
-  #         docker ps -a
-  #         docker exec $(docker ps --filter='ancestor=quay.io/freeipa/freeipa-server:almalinux-10' --format='{{.ID}}') bash -c 'ipa-server-install -r EXAMPLE.TEST --no-ntp --no-ui-redirect --unattended'
-  #     - name: Install baton
-  #       run: ./scripts/get-baton.sh && mv baton /usr/local/bin
-  #     - name: Build baton-ipa
-  #       run: go build ./cmd/baton-ipa
-  #     - name: Run baton-ipa
-  #       run: ./baton-ipa
-  #     - name: List grants
-  #       run: baton grants
-      # - name: Test grant/revoking posixGroup entitlements
-      #   env:
-      #     BATON: baton
-      #     BATON_LDAP: ./baton-ipa
-      #     BATON_ENTITLEMENT: "group:cn=testgroup00000,dc=example,dc=org:member"
-      #     BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
-      #     BATON_PRINCIPAL_TYPE: "user"
-      #   run: ./scripts/grant-revoke.sh
-      # - name: Test grant/revoking groupOfUniqueNames entitlements
-      #   env:
-      #     BATON: baton
-      #     BATON_LDAP: ./baton-ipa
-      #     BATON_ENTITLEMENT: "group:cn=othertestgroup00000,dc=example,dc=org:member"
-      #     BATON_PRINCIPAL: "cn=testuser00099@example.com,dc=example,dc=org"
-      #     BATON_PRINCIPAL_TYPE: "user"
-      #   run: ./scripts/grant-revoke.sh
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Wait for FreeIPA to finish installing
+        run: |
+          set -euo pipefail
+          CID=$(docker ps --filter "ancestor=${FREEIPA_IMAGE}" --format '{{.ID}}' | head -1)
+          if [ -z "$CID" ]; then
+            echo "::error::FreeIPA container not found"
+            docker ps -a
+            exit 1
+          fi
+          echo "FreeIPA container: $CID"
+
+          # ipa-server-install takes several minutes. Poll until an admin
+          # Kerberos bind succeeds, which means the directory + KDC are up.
+          ready=0
+          for i in $(seq 1 80); do
+            if ! docker ps --filter "id=$CID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+              echo "::error::FreeIPA container is no longer running"
+              docker logs "$CID" | tail -100 || true
+              exit 1
+            fi
+            if docker exec "$CID" bash -c 'echo "$PASSWORD" | kinit admin' >/dev/null 2>&1; then
+              echo "FreeIPA is ready after $((i*15))s"
+              ready=1
+              break
+            fi
+            echo "Waiting for FreeIPA... attempt $i"
+            sleep 15
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::FreeIPA did not become ready in time"
+            docker logs "$CID" | tail -200 || true
+            exit 1
+          fi
+
+      - name: Seed FreeIPA test fixtures
+        run: |
+          set -euo pipefail
+          CID=$(docker ps --filter "ancestor=${FREEIPA_IMAGE}" --format '{{.ID}}' | head -1)
+          docker cp scripts/freeipa-seed.sh "$CID:/tmp/freeipa-seed.sh"
+          docker exec "$CID" bash /tmp/freeipa-seed.sh
+
+      - name: Run integration tests
+        run: go test -tags integration -v -count=1 ./pkg/connector/...
+
+      - name: Dump FreeIPA logs on failure
+        if: failure()
+        run: |
+          CID=$(docker ps -a --filter "ancestor=${FREEIPA_IMAGE}" --format '{{.ID}}' | head -1)
+          if [ -n "$CID" ]; then
+            docker logs "$CID" | tail -300 || true
+          fi
