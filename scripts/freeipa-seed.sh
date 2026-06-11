@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Seed a FreeIPA server with the fixtures the baton-ipa integration tests expect.
+# Seed a FreeIPA server with the fixtures the baton-ipa CI sync tests expect.
 # Intended to be executed *inside* the FreeIPA container (e.g. via `docker exec`)
 # once the server has finished installing. It obtains an admin Kerberos ticket
 # and creates a test user, group, and role. The operations are idempotent so the
@@ -20,7 +20,10 @@ TEST_USER="${BATON_TEST_USER:-testuser1}"
 TEST_GROUP="${BATON_TEST_GROUP:-testgroup1}"
 TEST_ROLE="${BATON_TEST_ROLE:-testrole1}"
 
+# Suppress xtrace so the expanded password is not echoed into CI logs.
+{ set +x; } 2>/dev/null
 echo "$PASSWORD" | kinit admin
+set -x
 
 # User
 if ! ipa user-show "$TEST_USER" >/dev/null 2>&1; then

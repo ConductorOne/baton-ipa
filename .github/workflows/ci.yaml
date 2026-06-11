@@ -7,12 +7,9 @@ on:
       - main
 
 jobs:
-  # FreeIPA integration tests. These exercise the connector against a real
-  # FreeIPA directory and specifically cover the case where Grant/Revoke must
-  # resolve the LDAP DN from the resource trait profile "path" when ExternalId
-  # is nil (c1 service mode). See pkg/connector/integration_test.go.
-  integration-tests:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     # FreeIPA runs systemd inside the container. It is started here as a service
     # container; the default command is `ipa-server-install`, driven unattended
     # via IPA_SERVER_INSTALL_OPTS + PASSWORD. cgroup access is granted through
@@ -32,12 +29,13 @@ jobs:
           --cgroupns=host
           --volume /sys/fs/cgroup:/sys/fs/cgroup:rw
     env:
+      BATON_LOG_LEVEL: debug
       BATON_URL: "ldaps://localhost:636"
       BATON_BIND_DN: "uid=admin,cn=users,cn=accounts,dc=example,dc=test"
       BATON_BASE_DN: "dc=example,dc=test"
       BATON_PASSWORD: "Secret123"
       BATON_INSECURE_SKIP_VERIFY: "true"
-      FREEIPA_IMAGE: "quay.io/freeipa/freeipa-server:almalinux-9"
+      FREEIPA_CID: ${{ job.services.freeipa.id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -50,24 +48,19 @@ jobs:
       - name: Wait for FreeIPA to finish installing
         run: |
           set -euo pipefail
-          CID=$(docker ps --filter "ancestor=${FREEIPA_IMAGE}" --format '{{.ID}}' | head -1)
-          if [ -z "$CID" ]; then
-            echo "::error::FreeIPA container not found"
-            docker ps -a
-            exit 1
-          fi
-          echo "FreeIPA container: $CID"
+          echo "FreeIPA container: $FREEIPA_CID"
 
-          # ipa-server-install takes several minutes. Poll until an admin
-          # Kerberos bind succeeds, which means the directory + KDC are up.
+          # ipa-server-install takes several minutes. A successful kinit only
+          # proves the KDC is up, so also require `ipa ping`, which exercises
+          # the IPA API through httpd — the seed step depends on it.
           ready=0
           for i in $(seq 1 80); do
-            if ! docker ps --filter "id=$CID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
+            if ! docker ps --filter "id=$FREEIPA_CID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
               echo "::error::FreeIPA container is no longer running"
-              docker logs "$CID" | tail -100 || true
+              docker logs "$FREEIPA_CID" | tail -100 || true
               exit 1
             fi
-            if docker exec "$CID" bash -c 'echo "$PASSWORD" | kinit admin' >/dev/null 2>&1; then
+            if docker exec "$FREEIPA_CID" bash -c 'echo "$PASSWORD" | kinit admin && ipa ping' >/dev/null 2>&1; then
               echo "FreeIPA is ready after $((i*15))s"
               ready=1
               break
@@ -77,24 +70,66 @@ jobs:
           done
           if [ "$ready" -ne 1 ]; then
             echo "::error::FreeIPA did not become ready in time"
-            docker logs "$CID" | tail -200 || true
+            docker logs "$FREEIPA_CID" | tail -200 || true
             exit 1
           fi
 
       - name: Seed FreeIPA test fixtures
         run: |
           set -euo pipefail
-          CID=$(docker ps --filter "ancestor=${FREEIPA_IMAGE}" --format '{{.ID}}' | head -1)
-          docker cp scripts/freeipa-seed.sh "$CID:/tmp/freeipa-seed.sh"
-          docker exec "$CID" bash /tmp/freeipa-seed.sh
+          docker cp scripts/freeipa-seed.sh "$FREEIPA_CID:/tmp/freeipa-seed.sh"
+          docker exec "$FREEIPA_CID" bash /tmp/freeipa-seed.sh
 
-      - name: Run integration tests
-        run: go test -tags integration -v -count=1 ./pkg/connector/...
+      # The connector uses ipaUniqueID (users/groups) and entryUUID (roles) as
+      # resource IDs. FreeIPA generates these at creation time, so the
+      # entitlement/principal IDs for the sync-test action must be read back
+      # from the directory after seeding rather than hardcoded.
+      - name: Look up fixture resource IDs
+        id: fixtures
+        run: |
+          set -euo pipefail
+          lookup() {
+            docker exec "$FREEIPA_CID" ldapsearch -LLL -o ldif-wrap=no \
+              -x -H ldap://localhost:389 \
+              -D "cn=Directory Manager" -w "$BATON_PASSWORD" \
+              -s base -b "$1" "$2" \
+              | awk -v attr="$2:" 'tolower($1) == tolower(attr) {print $2}'
+          }
+          USER_ID=$(lookup "uid=testuser1,cn=users,cn=accounts,dc=example,dc=test" ipaUniqueID)
+          GROUP_ID=$(lookup "cn=testgroup1,cn=groups,cn=accounts,dc=example,dc=test" ipaUniqueID)
+          ROLE_ID=$(lookup "cn=testrole1,cn=roles,cn=accounts,dc=example,dc=test" entryUUID)
+          for v in USER_ID GROUP_ID ROLE_ID; do
+            if [ -z "${!v}" ]; then
+              echo "::error::$v lookup returned empty"
+              exit 1
+            fi
+          done
+          {
+            echo "user-id=$USER_ID"
+            echo "group-id=$GROUP_ID"
+            echo "role-id=$ROLE_ID"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build baton-ipa
+        run: go build ./cmd/baton-ipa
+
+      - name: Test group grant/revoke
+        uses: ConductorOne/github-workflows/actions/sync-test@v4
+        with:
+          connector: ./baton-ipa
+          baton-entitlement: "group:${{ steps.fixtures.outputs.group-id }}:member"
+          baton-principal: ${{ steps.fixtures.outputs.user-id }}
+          baton-principal-type: user
+
+      - name: Test role grant/revoke
+        uses: ConductorOne/github-workflows/actions/sync-test@v4
+        with:
+          connector: ./baton-ipa
+          baton-entitlement: "role:${{ steps.fixtures.outputs.role-id }}:member"
+          baton-principal: ${{ steps.fixtures.outputs.user-id }}
+          baton-principal-type: user
 
       - name: Dump FreeIPA logs on failure
         if: failure()
         run: |
-          CID=$(docker ps -a --filter "ancestor=${FREEIPA_IMAGE}" --format '{{.ID}}' | head -1)
-          if [ -n "$CID" ]; then
-            docker logs "$CID" | tail -300 || true
-          fi
+          docker logs "$FREEIPA_CID" | tail -300 || true
