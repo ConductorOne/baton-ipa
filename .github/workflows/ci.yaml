@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     # FreeIPA runs systemd inside the container. It is started here as a service
     # container; the default command is `ipa-server-install`, driven unattended
     # via IPA_SERVER_INSTALL_OPTS + PASSWORD. cgroup access is granted through
@@ -55,7 +55,7 @@ jobs:
           # proves the KDC is up, so also require `ipa ping`, which exercises
           # the IPA API through httpd — the seed step depends on it.
           ready=0
-          for i in $(seq 1 80); do
+          for i in $(seq 1 60); do
             if ! docker ps --filter "id=$FREEIPA_CID" --filter "status=running" --format '{{.ID}}' | grep -q .; then
               echo "::error::FreeIPA container is no longer running"
               docker logs "$FREEIPA_CID" | tail -100 || true
