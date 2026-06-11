@@ -240,22 +240,21 @@ func newRoleGrantFromDN(roleResource *v2.Resource, ipaUniqueID string, resourceT
 }
 
 func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	entitlementExternalId := entitlement.Resource.GetExternalId()
-	if entitlementExternalId == nil {
-		return nil, fmt.Errorf("baton-ipa: entitlement resource missing external ID")
+	roleDN, err := getDNFromResource(entitlement.Resource)
+	if err != nil {
+		return nil, err
 	}
-	roleDN := entitlementExternalId.Id
 
-	principalExternalId := principal.GetExternalId()
-	if principalExternalId == nil {
-		return nil, fmt.Errorf("baton-ipa: principal missing external ID")
+	principalDN, err := getDNFromResource(principal)
+	if err != nil {
+		return nil, err
 	}
-	principalDNArr := []string{principalExternalId.Id}
+	principalDNArr := []string{principalDN}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Add(attrRoleMember, principalDNArr)
 
 	// grant role memberships to the principal
-	err := r.client.LdapModify(
+	err = r.client.LdapModify(
 		ctx,
 		modifyRequest,
 	)
@@ -270,22 +269,21 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 	entitlement := grant.Entitlement
 	principal := grant.Principal
 
-	entitlementExternalId := entitlement.Resource.GetExternalId()
-	if entitlementExternalId == nil {
-		return nil, fmt.Errorf("baton-ipa: entitlement resource missing external ID")
+	roleDN, err := getDNFromResource(entitlement.Resource)
+	if err != nil {
+		return nil, err
 	}
-	roleDN := entitlementExternalId.Id
 
-	principalExternalId := principal.GetExternalId()
-	if principalExternalId == nil {
-		return nil, fmt.Errorf("baton-ipa: principal missing external ID")
+	principalDN, err := getDNFromResource(principal)
+	if err != nil {
+		return nil, err
 	}
-	principalDNArr := []string{principalExternalId.Id}
+	principalDNArr := []string{principalDN}
 	modifyRequest := ldap3.NewModifyRequest(roleDN, nil)
 	modifyRequest.Delete(attrRoleMember, principalDNArr)
 
 	// revoke role memberships from the principal
-	err := r.client.LdapModify(
+	err = r.client.LdapModify(
 		ctx,
 		modifyRequest,
 	)
