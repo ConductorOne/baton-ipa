@@ -35,7 +35,6 @@ jobs:
       BATON_BASE_DN: "dc=example,dc=test"
       BATON_PASSWORD: "Secret123"
       BATON_INSECURE_SKIP_VERIFY: "true"
-      FREEIPA_CID: ${{ job.services.freeipa.id }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,6 +45,8 @@ jobs:
           go-version-file: "go.mod"
 
       - name: Wait for FreeIPA to finish installing
+        env:
+          FREEIPA_CID: ${{ job.services.freeipa.id }}
         run: |
           set -euo pipefail
           echo "FreeIPA container: $FREEIPA_CID"
@@ -75,6 +76,8 @@ jobs:
           fi
 
       - name: Seed FreeIPA test fixtures
+        env:
+          FREEIPA_CID: ${{ job.services.freeipa.id }}
         run: |
           set -euo pipefail
           docker cp scripts/freeipa-seed.sh "$FREEIPA_CID:/tmp/freeipa-seed.sh"
@@ -86,6 +89,8 @@ jobs:
       # from the directory after seeding rather than hardcoded.
       - name: Look up fixture resource IDs
         id: fixtures
+        env:
+          FREEIPA_CID: ${{ job.services.freeipa.id }}
         run: |
           set -euo pipefail
           lookup() {
@@ -131,5 +136,7 @@ jobs:
 
       - name: Dump FreeIPA logs on failure
         if: failure()
+        env:
+          FREEIPA_CID: ${{ job.services.freeipa.id }}
         run: |
           docker logs "$FREEIPA_CID" | tail -300 || true
