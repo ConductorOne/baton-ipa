@@ -13,7 +13,8 @@
         "CAPABILITY_SYNC",
         "CAPABILITY_TARGETED_SYNC",
         "CAPABILITY_PROVISION"
-      ]
+      ],
+      "permissions": {}
     },
     {
       "resourceType": {
@@ -25,7 +26,8 @@
       },
       "capabilities": [
         "CAPABILITY_SYNC"
-      ]
+      ],
+      "permissions": {}
     },
     {
       "resourceType": {
@@ -37,7 +39,8 @@
       },
       "capabilities": [
         "CAPABILITY_SYNC"
-      ]
+      ],
+      "permissions": {}
     },
     {
       "resourceType": {
@@ -50,7 +53,8 @@
       "capabilities": [
         "CAPABILITY_SYNC",
         "CAPABILITY_PROVISION"
-      ]
+      ],
+      "permissions": {}
     },
     {
       "resourceType": {
@@ -64,14 +68,16 @@
         "CAPABILITY_SYNC",
         "CAPABILITY_TARGETED_SYNC",
         "CAPABILITY_RESOURCE_DELETE"
-      ]
+      ],
+      "permissions": {}
     }
   ],
   "connectorCapabilities": [
     "CAPABILITY_PROVISION",
     "CAPABILITY_SYNC",
     "CAPABILITY_RESOURCE_DELETE",
-    "CAPABILITY_TARGETED_SYNC"
+    "CAPABILITY_TARGETED_SYNC",
+    "CAPABILITY_SERVICE_MODE_TARGETED_SYNC"
   ],
   "credentialDetails": {}
 }
