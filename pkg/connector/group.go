@@ -79,9 +79,7 @@ func groupResource(ctx context.Context, group *ldap.Entry) (*v2.Resource, error)
 		profile["gid"] = groupId
 	}
 
-	groupTraitOptions := []rs.GroupTraitOption{
-		rs.WithGroupProfile(profile),
-	}
+	groupRsTraitOptions = append(groupRsTraitOptions, rs.WithResourceProfile(profile))
 
 	groupName := group.GetEqualFoldAttributeValue(attrGroupCommonName)
 
@@ -89,7 +87,7 @@ func groupResource(ctx context.Context, group *ldap.Entry) (*v2.Resource, error)
 		groupName,
 		resourceTypeGroup,
 		ipaUniqueID,
-		groupTraitOptions,
+		[]rs.GroupTraitOption{},
 		groupRsTraitOptions...,
 	)
 	if err != nil {
@@ -137,15 +135,13 @@ func (g *groupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagi
 		profile := map[string]interface{}{
 			"group_description": "Internal group for anyone",
 		}
-		groupTraitOptions := []rs.GroupTraitOption{
-			rs.WithGroupProfile(profile),
-		}
 		resource, err := rs.NewGroupResource(
 			internalAnyoneGroup,
 			resourceTypeGroup,
 			internalAnyoneGroupID,
-			groupTraitOptions,
+			[]rs.GroupTraitOption{},
 			rs.WithDescription("Internal group for anyone"),
+			rs.WithResourceProfile(profile),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -256,7 +252,7 @@ func (g *groupResourceType) Grants(ctx context.Context, resource *v2.Resource, t
 		return nil, "", nil, nil
 	}
 
-	externalId := resource.GetExternalId()
+	externalId := resource.GetExternalId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 	if externalId == nil {
 		return nil, "", nil, fmt.Errorf("ldap-connector: group %s has no external ID", resource.Id.Resource)
 	}

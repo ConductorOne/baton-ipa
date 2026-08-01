@@ -117,7 +117,7 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		return nil, "", nil, err
 	}
 
-	hostDN := resource.GetExternalId().GetId()
+	hostDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 	isAnyHost := resource.Id.Resource == internalAnyHostID
 	if hostDN == "" && !isAnyHost {
 		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
@@ -168,7 +168,7 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 }
 
 func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	hostDN := resource.GetExternalId().GetId()
+	hostDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 	isAnyHost := resource.Id.Resource == internalAnyHostID
 	if hostDN == "" && !isAnyHost {
 		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)

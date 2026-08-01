@@ -15,16 +15,16 @@ func TestGetDNFromResource(t *testing.T) {
 		rs.WithExternalID(&v2.ExternalId{Id: dn}))
 	require.NoError(t, err)
 
-	groupWithProfilePath, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id",
-		[]rs.GroupTraitOption{rs.WithGroupProfile(map[string]interface{}{pathProfileProperty: dn})})
+	groupWithProfilePath, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id", nil,
+		rs.WithResourceProfile(map[string]interface{}{pathProfileProperty: dn}))
 	require.NoError(t, err)
 
-	userWithProfilePath, err := rs.NewUserResource("jdoe", resourceTypeUser, "user-unique-id",
-		[]rs.UserTraitOption{rs.WithUserProfile(map[string]interface{}{pathProfileProperty: dn})})
+	userWithProfilePath, err := rs.NewUserResource("jdoe", resourceTypeUser, "user-unique-id", nil,
+		rs.WithResourceProfile(map[string]interface{}{pathProfileProperty: dn}))
 	require.NoError(t, err)
 
-	groupWithNeither, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id",
-		[]rs.GroupTraitOption{rs.WithGroupProfile(map[string]interface{}{"group_description": "no path here"})})
+	groupWithNeither, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id", nil,
+		rs.WithResourceProfile(map[string]interface{}{"group_description": "no path here"}))
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -34,8 +34,8 @@ func TestGetDNFromResource(t *testing.T) {
 		wantErr  bool
 	}{
 		{name: "external_id present", resource: groupWithExternalID, wantDN: dn},
-		{name: "external_id nil but group trait profile path present", resource: groupWithProfilePath, wantDN: dn},
-		{name: "external_id nil but user trait profile path present", resource: userWithProfilePath, wantDN: dn},
+		{name: "external_id nil but group resource profile path present", resource: groupWithProfilePath, wantDN: dn},
+		{name: "external_id nil but user resource profile path present", resource: userWithProfilePath, wantDN: dn},
 		{name: "neither external_id nor profile path present", resource: groupWithNeither, wantErr: true},
 	}
 

@@ -200,7 +200,11 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 
 	userTraitOptions := []rs.UserTraitOption{
 		rs.WithEmail(user.GetEqualFoldAttributeValue(attrUserMail), true),
-		rs.WithStatus(userStatus),
+	}
+
+	// UserTrait_Status_Status and Status_ResourceStatus share enum values.
+	resourceOptions := []rs.ResourceOption{
+		rs.WithResourceStatus(v2.Status_ResourceStatus(userStatus), ""),
 	}
 
 	rawObjectClasses := user.GetEqualFoldAttributeValues("objectClass")
@@ -223,12 +227,12 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		profile["login"] = login
 	}
 
-	userTraitOptions = append(userTraitOptions, rs.WithUserProfile(profile))
+	resourceOptions = append(resourceOptions, rs.WithResourceProfile(profile))
 
 	createdAt := user.GetEqualFoldAttributeValue(attrUserCreatedAt)
 	createTime, err := time.Parse("20060102150405Z0700", createdAt)
 	if err == nil {
-		userTraitOptions = append(userTraitOptions, rs.WithCreatedAt(createTime))
+		resourceOptions = append(resourceOptions, rs.WithResourceCreatedAt(createTime))
 	}
 
 	// This might not be supported by FreeIPA
@@ -252,7 +256,7 @@ func userResource(ctx context.Context, user *ldap.Entry) (*v2.Resource, error) {
 		resourceTypeUser,
 		ipaUniqueID,
 		userTraitOptions,
-		rs.WithExternalID(&v2.ExternalId{Id: user.DN}),
+		append(resourceOptions, rs.WithExternalID(&v2.ExternalId{Id: user.DN}))...,
 	)
 	if err != nil {
 		return nil, err
