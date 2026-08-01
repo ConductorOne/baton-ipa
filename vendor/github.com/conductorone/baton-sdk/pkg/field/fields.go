@@ -10,6 +10,11 @@ import (
 
 var ErrWrongValueType = errors.New("unable to cast any to concrete type")
 
+const (
+	Oauth2ClientIDFieldName     = "oauth2_client_cred_grant_client_id"
+	Oauth2ClientSecretFieldName = "oauth2_client_cred_grant_client_secret" //nolint:gosec // this is not a credential
+)
+
 type Variant string
 
 const (
@@ -58,9 +63,18 @@ type SchemaField struct {
 	FieldName    string
 	Required     bool
 	DefaultValue any
-	Description  string
-	ExportTarget ExportTarget
-	HelpURL      string
+	// SuggestedValue is a default that is only surfaced in the exported config
+	// schema (i.e. pre-populated in the c1 GUI when configuring a new
+	// connector). Unlike DefaultValue, it is NOT registered as the CLI/runtime
+	// flag default, so it is never injected into the connector config when the
+	// field is left unset. This lets a connector suggest a value in the UI
+	// without changing behavior for existing connectors whose stored config
+	// omits the field. When set (non-nil), it takes precedence over
+	// DefaultValue for schema export only.
+	SuggestedValue any
+	Description    string
+	ExportTarget   ExportTarget
+	HelpURL        string
 
 	Variant         Variant
 	Rules           FieldRule
@@ -74,6 +88,9 @@ type SchemaField struct {
 	ConnectorConfig connectorConfig
 
 	WasReExported bool
+
+	// Groups
+	FieldGroups []SchemaFieldGroup
 }
 
 type SchemaTypes interface {
@@ -173,6 +190,21 @@ func GetDefaultValue[T SchemaTypes](s SchemaField) (*T, error) {
 	return &value, nil
 }
 
+// GetSuggestedValue returns the SuggestedValue type-asserted to T, or nil when
+// no suggested value is set. It populates the exported schema's suggested_value
+// field, which pre-populates the c1 GUI without being injected into resolved
+// config.
+func GetSuggestedValue[T SchemaTypes](s SchemaField) (*T, error) {
+	if s.SuggestedValue == nil {
+		return nil, nil
+	}
+	value, ok := s.SuggestedValue.(T)
+	if !ok {
+		return nil, ErrWrongValueType
+	}
+	return &value, nil
+}
+
 func BoolField(name string, optional ...fieldOption) SchemaField {
 	field := SchemaField{
 		FieldName:       name,
@@ -204,6 +236,45 @@ func StringField(name string, optional ...fieldOption) SchemaField {
 		Rules:           FieldRule{},
 		SyncerConfig:    syncerConfig{},
 		ConnectorConfig: connectorConfig{FieldType: Text},
+	}
+
+	for _, o := range optional {
+		field = o(field)
+	}
+
+	return field
+}
+
+func FileUploadField(name string, bonusStrings []string, optional ...fieldOption) SchemaField {
+	field := SchemaField{
+		FieldName:    name,
+		Variant:      StringVariant,
+		DefaultValue: "",
+		ExportTarget: ExportTargetGUI,
+		Rules:        FieldRule{},
+		SyncerConfig: syncerConfig{},
+		ConnectorConfig: connectorConfig{
+			FieldType:    FileUpload,
+			BonusStrings: bonusStrings,
+		},
+	}
+
+	for _, o := range optional {
+		field = o(field)
+	}
+
+	return field
+}
+
+func RandomField(name string, optional ...fieldOption) SchemaField {
+	field := SchemaField{
+		FieldName:       name,
+		Variant:         StringVariant,
+		DefaultValue:    "",
+		ExportTarget:    ExportTargetGUI,
+		Rules:           FieldRule{},
+		SyncerConfig:    syncerConfig{},
+		ConnectorConfig: connectorConfig{FieldType: Randomize},
 	}
 
 	for _, o := range optional {
@@ -274,10 +345,28 @@ func SelectField(name string, options []string, optional ...fieldOption) SchemaF
 		DefaultValue: "",
 		ExportTarget: ExportTargetGUI,
 		Rules: FieldRule{
-			s: &v1_conf.StringRules{In: options},
+			s: v1_conf.StringRules_builder{In: options}.Build(),
 		},
 		SyncerConfig:    syncerConfig{},
 		ConnectorConfig: connectorConfig{FieldType: Text},
+	}
+
+	for _, o := range optional {
+		field = o(field)
+	}
+
+	return field
+}
+
+func Oauth2Field(name string, optional ...fieldOption) SchemaField {
+	field := SchemaField{
+		FieldName:       name,
+		Variant:         StringVariant,
+		DefaultValue:    "",
+		ExportTarget:    ExportTargetGUI,
+		Rules:           FieldRule{},
+		SyncerConfig:    syncerConfig{},
+		ConnectorConfig: connectorConfig{FieldType: OAuth2},
 	}
 
 	for _, o := range optional {

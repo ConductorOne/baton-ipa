@@ -7,10 +7,13 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -24,9 +27,17 @@ type lambdaTransport struct {
 }
 
 func (l *lambdaTransport) RoundTrip(ctx context.Context, req *Request) (*Response, error) {
-	payload, err := req.MarshalJSON()
+	payload, frameOnly, err := req.marshalPayload()
 	if err != nil {
 		return nil, fmt.Errorf("lambda_transport: failed to marshal frame: %w", err)
+	}
+	if frameOnly != nil {
+		ctxzap.Extract(ctx).Warn(
+			"lambda_transport: request has no legacy encoding, sending v2 frame only; a connector on a pre-frame SDK cannot process this call",
+			zap.String("method", req.Method()),
+			zap.String("function_name", l.functionName),
+			zap.NamedError("legacy_encoding_error", frameOnly),
+		)
 	}
 
 	input := &lambda.InvokeInput{
@@ -38,6 +49,9 @@ func (l *lambdaTransport) RoundTrip(ctx context.Context, req *Request) (*Respons
 	// Invoke the Lambda function.
 	invokeResp, err := l.lambdaClient.Invoke(ctx, input)
 	if err != nil {
+		if isTransientNetworkError(err) {
+			return nil, status.Errorf(codes.Unavailable, "lambda_transport: transient network error invoking function: %s", err)
+		}
 		return nil, fmt.Errorf("lambda_transport: failed to invoke lambda function: %w", err)
 	}
 
@@ -53,10 +67,26 @@ func (l *lambdaTransport) RoundTrip(ctx context.Context, req *Request) (*Respons
 
 		filteredLogs := extractMeaningfulLogLines(logSummary)
 
+		// If payload contains "Task timed out after", return a retryable error.
+		// This means the lambda function timed out.
+		// Status code is 200 in this case, so we have to check the payload for a special string.
+		if strings.Contains(string(invokeResp.Payload), "Task timed out after") {
+			return nil, status.Errorf(codes.DeadlineExceeded, "lambda_transport: function timed out: %s; logSummary: %s", *invokeResp.FunctionError, filteredLogs)
+		}
+		// If log summary contains \"error\":\"context deadline exceeded\", return a retryable error.
+		if strings.Contains(filteredLogs, `\"error\":\"context deadline exceeded\"`) {
+			return nil, status.Errorf(codes.DeadlineExceeded, "lambda_transport: function timed out: %s; logSummary: %s", *invokeResp.FunctionError, filteredLogs)
+		}
+		// If a third case is ever added to this, put the logic in its own function and add some test cases.
+
+		if filteredLogs != "" {
+			return nil, fmt.Errorf("%s", filteredLogs)
+		}
+
 		return nil, fmt.Errorf(
-			"lambda_transport: function returned error: %s; logSummary: %s",
+			"lambda_transport: function returned error: %s; status code: %d",
 			*invokeResp.FunctionError,
-			filteredLogs,
+			invokeResp.StatusCode,
 		)
 	}
 
@@ -92,9 +122,18 @@ func (c *clientConn) Invoke(ctx context.Context, method string, args any, reply 
 		return status.Errorf(codes.Unknown, "args and reply must satisfy proto.Message")
 	}
 
-	// TODO(morgabra): Should we do some of this stuff? (e.g. detect ctx deadline and set grpc-timeout, etc?)
-	// https://github.com/grpc/grpc-go/blob/9dc22c029c2592b5b6235d9ef6f14d62ecd6a509/internal/transport/http2_client.go#L541
 	md, _ := metadata.FromOutgoingContext(ctx)
+
+	// Propagate the context deadline to the server via the grpc-timeout header,
+	// mirroring grpc-go's HTTP/2 transport behavior.
+	if deadline, ok := ctx.Deadline(); ok {
+		timeout := time.Until(deadline)
+		if timeout <= 0 {
+			return status.Errorf(codes.DeadlineExceeded, "context deadline exceeded before invoking method %s", method)
+		}
+		md = md.Copy()
+		md.Set("grpc-timeout", encodeTimeout(timeout))
+	}
 
 	treq, err := NewRequest(method, req, md)
 	if err != nil {
@@ -173,6 +212,12 @@ func extractMeaningfulLogLines(raw string) string {
 		if slices.ContainsFunc(ignoredLogPrefixes, func(prefix string) bool {
 			return strings.HasPrefix(line, prefix)
 		}) || strings.Contains(line, "Runtime.ExitError") {
+			continue
+		}
+
+		// Skip structured JSON log lines (zap logger output) - they are
+		// diagnostic context, not the actual error.
+		if strings.HasPrefix(line, "{") {
 			continue
 		}
 
