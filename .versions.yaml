@@ -1,4 +1,4 @@
 # This file is managed by baton-admin. DO NOT EDIT!!!
-go-version: 1.23.4
+go-version: 1.25.2
 dependencies:
-    baton-sdk: v0.3.31
+    baton-sdk: v0.20.6
