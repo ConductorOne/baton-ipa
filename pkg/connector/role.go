@@ -50,10 +50,6 @@ func roleResource(ctx context.Context, role *ldap.Entry) (*v2.Resource, error) {
 		pathProfileProperty: roleDN,
 	}
 
-	roleTraitOptions := []rs.RoleTraitOption{
-		rs.WithRoleProfile(profile),
-	}
-
 	// Roles do not have an ipaUniqueID, so we use the entryUUID as the identifier
 	entryUUID := role.GetEqualFoldAttributeValue(attrEntryUUID)
 
@@ -62,7 +58,8 @@ func roleResource(ctx context.Context, role *ldap.Entry) (*v2.Resource, error) {
 		roleName,
 		resourceTypeRole,
 		entryUUID,
-		roleTraitOptions,
+		[]rs.RoleTraitOption{},
+		rs.WithResourceProfile(profile),
 		rs.WithExternalID(&v2.ExternalId{
 			Id: role.DN,
 		}),
@@ -132,7 +129,7 @@ func (r *roleResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 
 func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
-	resourceExternalId := resource.GetExternalId()
+	resourceExternalId := resource.GetExternalId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 	if resourceExternalId == nil {
 		return nil, "", nil, fmt.Errorf("baton-ipa: role resource missing external ID")
 	}

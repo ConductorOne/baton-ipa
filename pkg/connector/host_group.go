@@ -162,7 +162,7 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	if bag.Current() != nil && bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic entitlements for host group hbac rules
-		hostGroupDN := resource.GetExternalId().GetId()
+		hostGroupDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 		if hostGroupDN == "" {
 			return nil, "", nil, fmt.Errorf("baton-ipa: host group resource %s has no external ID", resource.DisplayName)
 		}
@@ -339,7 +339,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		})
 	}
 
-	hostGroupDN := resource.GetExternalId().GetId()
+	hostGroupDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 	if hostGroupDN == "" {
 		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
 	}
@@ -354,7 +354,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 	var pageToken string
 	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id { // Static (member/manager) grants for host group
 		var ldapHostGroup *ldap3.Entry
-		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId())
+		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId()) //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 		if err != nil {
 			l.Error("baton-ipa: failed to list host group members", zap.String("host_group_dn", resource.Id.Resource), zap.Error(err))
 			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
@@ -488,7 +488,7 @@ func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l 
 }
 
 func (r *hostGroupResourceType) getHostGroupMembers(ctx context.Context, l *zap.Logger, resource *v2.Resource) ([]*ipaObject, error) {
-	hostGroup, err := r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId())
+	hostGroup, err := r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId()) //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 	if err != nil {
 		return nil, fmt.Errorf("baton-ipa: failed to get host group members: %w", err)
 	}

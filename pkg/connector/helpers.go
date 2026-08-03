@@ -17,11 +17,14 @@ const pathProfileProperty = "path"
 
 // getDNFromResource resolves the LDAP DN for a resource. Resource.ExternalId is
 // no longer used by baton-sdk and is not persisted by c1, so it is nil for
-// resources provided in service mode. The DN is reliably carried in the trait
+// resources provided in service mode. The DN is reliably carried in the resource
 // profile "path" field, which is the source of truth here. ExternalId is still
 // checked first because it carries the unmodified DN in standalone CLI runs.
+//
+// The ExternalId read is deprecated upstream but not yet removed; dropping it is
+// part of the DN-resolution rework in #49 rather than this change.
 func getDNFromResource(resource *v2.Resource) (string, error) {
-	if eid := resource.GetExternalId(); eid != nil && eid.Id != "" {
+	if eid := resource.GetExternalId(); eid != nil && eid.Id != "" { //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
 		return eid.Id, nil
 	}
 	if dn, ok := dnFromProfilePath(resource); ok && dn != "" {
@@ -30,23 +33,11 @@ func getDNFromResource(resource *v2.Resource) (string, error) {
 	return "", fmt.Errorf("baton-ipa: resource %s missing DN", resource.Id.Resource)
 }
 
+// dnFromProfilePath reads the DN out of the resource-level profile. baton-sdk
+// v0.20.x moved profile off the individual traits and onto Resource itself, and
+// the resource builders here write it through rs.WithResourceProfile.
 func dnFromProfilePath(resource *v2.Resource) (string, bool) {
-	if t, err := rs.GetGroupTrait(resource); err == nil {
-		if dn, ok := rs.GetProfileStringValue(t.GetProfile(), pathProfileProperty); ok {
-			return dn, true
-		}
-	}
-	if t, err := rs.GetUserTrait(resource); err == nil {
-		if dn, ok := rs.GetProfileStringValue(t.GetProfile(), pathProfileProperty); ok {
-			return dn, true
-		}
-	}
-	if t, err := rs.GetRoleTrait(resource); err == nil {
-		if dn, ok := rs.GetProfileStringValue(t.GetProfile(), pathProfileProperty); ok {
-			return dn, true
-		}
-	}
-	return "", false
+	return rs.GetProfileStringValue(resource.GetProfile(), pathProfileProperty)
 }
 
 func splitFullName(fullName string) (string, string) {
