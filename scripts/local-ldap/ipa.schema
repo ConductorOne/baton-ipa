@@ -1,0 +1,85 @@
+# Minimal approximation of the FreeIPA schema, enough for baton-ipa's filters.
+# OIDs are from a private test arc - this is a local harness, not a real IPA.
+# objectClass NAMEs are deliberately lowercase to match how FreeIPA stores them.
+
+attributetype ( 1.3.6.1.4.1.99999.1.1 NAME 'ipaUniqueID'
+  DESC 'Unique identifier of an IPA object'
+  EQUALITY caseIgnoreMatch
+  SUBSTR caseIgnoreSubstringsMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.99999.1.2 NAME 'fqdn'
+  DESC 'Fully qualified domain name of a host'
+  EQUALITY caseIgnoreIA5Match
+  SUBSTR caseIgnoreIA5SubstringsMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 )
+
+attributetype ( 1.3.6.1.4.1.99999.1.3 NAME 'memberManager'
+  DESC 'Entities allowed to manage the members of a group'
+  EQUALITY distinguishedNameMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )
+
+attributetype ( 1.3.6.1.4.1.99999.1.4 NAME 'memberHost'
+  DESC 'Hosts or host groups an association applies to'
+  EQUALITY distinguishedNameMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )
+
+attributetype ( 1.3.6.1.4.1.99999.1.5 NAME 'memberUser'
+  DESC 'Users or groups an association applies to'
+  EQUALITY distinguishedNameMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )
+
+attributetype ( 1.3.6.1.4.1.99999.1.6 NAME 'hostCategory'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.99999.1.7 NAME 'userCategory'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.99999.1.8 NAME 'accessRuleType'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.99999.1.9 NAME 'nsAccountLock'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+
+objectclass ( 1.3.6.1.4.1.99999.2.1 NAME 'ipaobject'
+  DESC 'IPA object'
+  AUXILIARY
+  MUST ipaUniqueID )
+
+# Structural with an optional member, rather than auxiliary over groupOfNames:
+# FreeIPA groups may legitimately have no members, and groupOfNames would make
+# removing the last one a schema violation.
+objectclass ( 1.3.6.1.4.1.99999.2.2 NAME 'ipausergroup'
+  DESC 'IPA user group'
+  STRUCTURAL
+  MUST cn
+  MAY ( member $ memberManager $ gidNumber $ description $ owner $ seeAlso ) )
+
+objectclass ( 1.3.6.1.4.1.99999.2.3 NAME 'ipahostgroup'
+  DESC 'IPA host group'
+  STRUCTURAL
+  MUST cn
+  MAY ( member $ memberManager $ description $ owner $ seeAlso ) )
+
+objectclass ( 1.3.6.1.4.1.99999.2.4 NAME 'ipahost'
+  DESC 'IPA host'
+  STRUCTURAL
+  MUST fqdn
+  MAY ( cn $ description $ l $ o $ ou $ owner ) )
+
+objectclass ( 1.3.6.1.4.1.99999.2.5 NAME 'ipahbacrule'
+  DESC 'IPA HBAC rule'
+  STRUCTURAL
+  MUST cn
+  MAY ( description $ accessRuleType $ memberUser $ userCategory $
+        memberHost $ hostCategory $ member ) )
+
+# 389-ds container class used throughout the IPA DIT.
+objectclass ( 1.3.6.1.4.1.99999.2.6 NAME 'nsContainer'
+  DESC 'Container'
+  STRUCTURAL
+  MUST cn )

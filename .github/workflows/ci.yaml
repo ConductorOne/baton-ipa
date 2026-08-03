@@ -81,10 +81,13 @@ jobs:
         run: |
           set -euo pipefail
           docker cp scripts/freeipa-seed.sh "$FREEIPA_CID:/tmp/freeipa-seed.sh"
-          docker exec "$FREEIPA_CID" bash /tmp/freeipa-seed.sh
+          # The host fqdn is passed explicitly so the lookup step below can
+          # address the fixture by DN.
+          docker exec -e BATON_TEST_HOST=host1.example.test \
+            "$FREEIPA_CID" bash /tmp/freeipa-seed.sh
 
-      # The connector uses ipaUniqueID (users/groups) and entryUUID (roles) as
-      # resource IDs. FreeIPA generates these at creation time, so the
+      # The connector uses ipaUniqueID (users, groups, hosts, host groups) and
+      # entryUUID (roles) as resource IDs. FreeIPA generates these at creation time, so the
       # entitlement/principal IDs for the sync-test action must be read back
       # from the directory after seeding rather than hardcoded.
       - name: Look up fixture resource IDs
@@ -101,9 +104,12 @@ jobs:
               | awk -v attr="$2:" 'tolower($1) == tolower(attr) {print $2}'
           }
           USER_ID=$(lookup "uid=testuser1,cn=users,cn=accounts,dc=example,dc=test" ipaUniqueID)
+          USER2_ID=$(lookup "uid=testuser2,cn=users,cn=accounts,dc=example,dc=test" ipaUniqueID)
           GROUP_ID=$(lookup "cn=testgroup1,cn=groups,cn=accounts,dc=example,dc=test" ipaUniqueID)
           ROLE_ID=$(lookup "cn=testrole1,cn=roles,cn=accounts,dc=example,dc=test" entryUUID)
-          for v in USER_ID GROUP_ID ROLE_ID; do
+          HOST_ID=$(lookup "fqdn=host1.example.test,cn=computers,cn=accounts,dc=example,dc=test" ipaUniqueID)
+          HOSTGROUP_ID=$(lookup "cn=testhostgroup1,cn=hostgroups,cn=accounts,dc=example,dc=test" ipaUniqueID)
+          for v in USER_ID USER2_ID GROUP_ID ROLE_ID HOST_ID HOSTGROUP_ID; do
             if [ -z "${!v}" ]; then
               echo "::error::$v lookup returned empty"
               exit 1
@@ -111,12 +117,91 @@ jobs:
           done
           {
             echo "user-id=$USER_ID"
+            echo "user2-id=$USER2_ID"
             echo "group-id=$GROUP_ID"
             echo "role-id=$ROLE_ID"
+            echo "host-id=$HOST_ID"
+            echo "hostgroup-id=$HOSTGROUP_ID"
           } >> "$GITHUB_OUTPUT"
 
       - name: Build baton-ipa
         run: go build ./cmd/baton-ipa
+
+      # scripts/get-baton.sh resolves the release through an unauthenticated API
+      # call, which is rate limited on shared runner IPs. Use the workflow token.
+      - name: Install baton
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download --repo ConductorOne/baton \
+            --pattern 'baton-*-linux-amd64.tar.gz' --output baton.tar.gz --clobber
+          tar xzf baton.tar.gz
+          ./baton --version
+
+      # CXP-842 regression guard. Every assertion below is a grant or
+      # entitlement the connector can only produce by resolving an LDAP DN from
+      # the resource handed back to Grants()/Entitlements(). That used to be
+      # read from Resource.ExternalId, which c1 does not persist, so all of this
+      # failed in hosted mode with "has no external ID" while a CLI sync passed.
+      - name: Test sync resolves DNs for every resource type
+        env:
+          USER_ID: ${{ steps.fixtures.outputs.user-id }}
+          USER2_ID: ${{ steps.fixtures.outputs.user2-id }}
+          GROUP_ID: ${{ steps.fixtures.outputs.group-id }}
+          ROLE_ID: ${{ steps.fixtures.outputs.role-id }}
+          HOST_ID: ${{ steps.fixtures.outputs.host-id }}
+          HOSTGROUP_ID: ${{ steps.fixtures.outputs.hostgroup-id }}
+        run: |
+          set -euo pipefail
+
+          ./baton-ipa --file=sync.c1z
+
+          assert_grant() {
+            local entitlement="$1" principal="$2"
+            if ! ./baton grants --file=sync.c1z --entitlement="$entitlement" --output-format=json \
+              | jq --exit-status --arg p "$principal" \
+                'any(.grants[]?; .principal.id.resource == $p)' >/dev/null; then
+              echo "::error::no grant of '$entitlement' to '$principal'"
+              return 1
+            fi
+            echo "ok: $entitlement -> $principal"
+          }
+
+          assert_entitlement() {
+            local entitlement="$1"
+            if ! ./baton entitlements --file=sync.c1z --output-format=json \
+              | jq --exit-status --arg id "$entitlement" \
+                'any(.entitlements[]?; .entitlement.id == $id)' >/dev/null; then
+              echo "::error::entitlement '$entitlement' was not synced"
+              return 1
+            fi
+            echo "ok: $entitlement"
+          }
+
+          # group.Grants - the failure reported in CXP-842
+          assert_grant "group:$GROUP_ID:member" "$USER_ID"
+          assert_grant "group:$GROUP_ID:manager" "$USER2_ID"
+
+          # role.Grants, for both a user and a nested group member
+          assert_grant "role:$ROLE_ID:member" "$USER_ID"
+          assert_grant "role:$ROLE_ID:member" "$GROUP_ID"
+
+          # host_group.Grants, static and HBAC-derived
+          assert_grant "host_group:$HOSTGROUP_ID:member" "$HOST_ID"
+          assert_grant "host_group:$HOSTGROUP_ID:manager" "$USER2_ID"
+          assert_entitlement "host_group:$HOSTGROUP_ID:testhbac1"
+          assert_grant "host_group:$HOSTGROUP_ID:testhbac1" "$USER_ID"
+
+          # host.Entitlements/Grants. Hosts have no trait profile to carry a DN,
+          # so these only appear if the DN was resolved by ipaUniqueID.
+          assert_entitlement "host:$HOST_ID:testhbac1"
+          assert_grant "host:$HOST_ID:testhbac1" "$USER_ID"
+
+          # The inherited entitlement host_group.Entitlements projects onto each
+          # member host.
+          assert_entitlement "host:$HOST_ID:testhostgroup1 - testhbac1"
+          assert_grant "host:$HOST_ID:testhostgroup1 - testhbac1" "$USER_ID"
 
       - name: Test group grant/revoke
         uses: ConductorOne/github-workflows/actions/sync-test@v4
@@ -126,13 +211,29 @@ jobs:
           baton-principal: ${{ steps.fixtures.outputs.user-id }}
           baton-principal-type: user
 
+      # testuser2, not testuser1: the fixtures make testgroup1 a member of the
+      # role and testuser1 a member of testgroup1, so grant expansion would
+      # re-derive a role grant for testuser1 and the post-revoke check would
+      # never see it go away. testuser2 only manages the group, and manager
+      # grants are not expandable.
       - name: Test role grant/revoke
         uses: ConductorOne/github-workflows/actions/sync-test@v4
         with:
           connector: ./baton-ipa
           baton-entitlement: "role:${{ steps.fixtures.outputs.role-id }}:member"
-          baton-principal: ${{ steps.fixtures.outputs.user-id }}
+          baton-principal: ${{ steps.fixtures.outputs.user2-id }}
           baton-principal-type: user
+
+      # Role membership is grantable to hosts, and a host resource carries no DN
+      # at all, so this is the provisioning path that has to resolve one by
+      # ipaUniqueID.
+      - name: Test role grant/revoke for a host principal
+        uses: ConductorOne/github-workflows/actions/sync-test@v4
+        with:
+          connector: ./baton-ipa
+          baton-entitlement: "role:${{ steps.fixtures.outputs.role-id }}:member"
+          baton-principal: ${{ steps.fixtures.outputs.host-id }}
+          baton-principal-type: host
 
       - name: Dump FreeIPA logs on failure
         if: failure()
