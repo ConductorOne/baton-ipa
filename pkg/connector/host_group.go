@@ -47,22 +47,22 @@ func hostGroupResource(ctx context.Context, hostGroup *ldap.Entry) (*v2.Resource
 	if err != nil {
 		return nil, err
 	}
-	hostDN := hdn.String()
+	hostGroupDN := hdn.String()
 
 	ipaUniqueID := hostGroup.GetEqualFoldAttributeValue(attrIPAUniqueID)
 	hostGroupName := hostGroup.GetEqualFoldAttributeValue(attrCommonName)
 	description := hostGroup.GetEqualFoldAttributeValue(attrDescription)
 
-	groupTraits := []rs.GroupTraitOption{}
-
+	// Host groups previously carried an empty profile, leaving Entitlements() and
+	// Grants() nothing to resolve a DN from once c1 dropped ExternalId.
 	resource, err := rs.NewGroupResource(
 		hostGroupName,
 		resourceTypeHostGroup,
 		ipaUniqueID,
-		groupTraits,
+		[]rs.GroupTraitOption{},
 		rs.WithDescription(description),
-		rs.WithExternalID(&v2.ExternalId{
-			Id: hostDN,
+		rs.WithResourceProfile(map[string]interface{}{
+			pathProfileProperty: hostGroupDN,
 		}),
 	)
 	if err != nil {
@@ -162,9 +162,9 @@ func (r *hostGroupResourceType) Entitlements(ctx context.Context, resource *v2.R
 	}
 
 	if bag.Current() != nil && bag.Current().ResourceTypeID == hbacRuleEntryType { // Dynamic entitlements for host group hbac rules
-		hostGroupDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
-		if hostGroupDN == "" {
-			return nil, "", nil, fmt.Errorf("baton-ipa: host group resource %s has no external ID", resource.DisplayName)
+		hostGroupDN, err := getDNFromResource(resource)
+		if err != nil {
+			return nil, "", nil, err
 		}
 
 		filter := fmt.Sprintf(hbacRuleHostFilter, hostGroupDN)
@@ -339,24 +339,21 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 		})
 	}
 
-	hostGroupDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
-	if hostGroupDN == "" {
-		return nil, "", nil, fmt.Errorf("ldap-connector: hbac rule %s has no external ID", resource.Id.Resource)
-	}
-
-	// Validate the host group DN
-	canonicalDN, err := ldap.CanonicalizeDN(hostGroupDN)
+	// Both branches below need the host group DN, and the HBAC branch runs on a
+	// later page - after the static branch has been popped - so resolve it up
+	// front rather than inside a branch.
+	hostGroupDN, err := getDNFromResource(resource)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("baton-ipa: invalid host group DN: '%s' in host group grants: %w", resource.Id.Resource, err)
+		return nil, "", nil, err
 	}
-	l = l.With(zap.Stringer("host_group_dn", canonicalDN))
+	l = l.With(zap.String("host_group_dn", hostGroupDN))
 
 	var pageToken string
 	if bag.Current().ResourceTypeID == resourceTypeHostGroup.Id { // Static (member/manager) grants for host group
 		var ldapHostGroup *ldap3.Entry
-		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId()) //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
+		ldapHostGroup, err = r.getHostGroupWithFallback(ctx, l, resource.Id, hostGroupDN)
 		if err != nil {
-			l.Error("baton-ipa: failed to list host group members", zap.String("host_group_dn", resource.Id.Resource), zap.Error(err))
+			l.Error("baton-ipa: failed to list host group members", zap.String("resource_id", resource.Id.Resource), zap.Error(err))
 			return nil, "", nil, fmt.Errorf("baton-ipa: failed to list host group %s members: %w", resource.Id.Resource, err)
 		}
 
@@ -378,23 +375,23 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 				1,
 			)
 			if err != nil {
-				l.Error("baton-ipa: failed to get host group member", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
+				l.Error("baton-ipa: failed to get host group member", zap.String("member_dn", memberDN), zap.Error(err))
 				continue
 			}
 			var g *v2.Grant
 			if len(member) != 1 {
-				l.Warn("baton-ipa: member not found", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
+				l.Warn("baton-ipa: member not found", zap.String("member_dn", memberDN))
 				continue
 			}
 
 			g = newHostGroupGrantFromEntry(resource, member[0])
 			if g == nil {
-				l.Warn("baton-ipa: member not supported", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN))
+				l.Warn("baton-ipa: member not supported", zap.String("member_dn", memberDN))
 				continue
 			}
 
 			if g.Id == "" {
-				l.Error("baton-ipa: failed to create grant", zap.String("host_group_dn", resource.Id.Resource), zap.String("member_dn", memberDN), zap.Error(err))
+				l.Error("baton-ipa: failed to create grant", zap.String("member_dn", memberDN), zap.Error(err))
 				continue
 			}
 			grants = append(grants, g)
@@ -443,11 +440,7 @@ func (r *hostGroupResourceType) Grants(ctx context.Context, resource *v2.Resourc
 
 // getHostGroupWithFallback get an LDAP entry for a host group.
 // It first tries to get the host group by its DN. If that fails, it tries to get the host group by its IPA unique ID.
-func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l *zap.Logger, resourceId *v2.ResourceId, externalId *v2.ExternalId) (*ldap3.Entry, error) {
-	if externalId == nil {
-		return nil, fmt.Errorf("baton-ipa: host group resource missing external ID")
-	}
-	hostGroupDN := externalId.Id
+func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l *zap.Logger, resourceId *v2.ResourceId, hostGroupDN string) (*ldap3.Entry, error) {
 	hostGroup, err := r.client.LdapGetWithStringDN(
 		ctx,
 		hostGroupDN,
@@ -488,7 +481,12 @@ func (r *hostGroupResourceType) getHostGroupWithFallback(ctx context.Context, l 
 }
 
 func (r *hostGroupResourceType) getHostGroupMembers(ctx context.Context, l *zap.Logger, resource *v2.Resource) ([]*ipaObject, error) {
-	hostGroup, err := r.getHostGroupWithFallback(ctx, l, resource.Id, resource.GetExternalId()) //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
+	hostGroupDN, err := getDNFromResource(resource)
+	if err != nil {
+		return nil, err
+	}
+
+	hostGroup, err := r.getHostGroupWithFallback(ctx, l, resource.Id, hostGroupDN)
 	if err != nil {
 		return nil, fmt.Errorf("baton-ipa: failed to get host group members: %w", err)
 	}

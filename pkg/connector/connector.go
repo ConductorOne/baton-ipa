@@ -23,8 +23,8 @@ func (l *FreeIPA) ResourceSyncers(ctx context.Context) []connectorbuilder.Resour
 	ipaObjectCache := newIPAObjectCache(l.client, l.config.BaseDN)
 	return []connectorbuilder.ResourceSyncer{
 		userBuilder(l.client, l.config.UserSearchDN, l.config.DisableOperationalAttrs),
-		groupBuilder(l.client, l.config.GroupSearchDN, l.config.UserSearchDN),
-		roleBuilder(l.client, l.config.RoleSearchDN),
+		groupBuilder(l.client, l.config.GroupSearchDN, l.config.UserSearchDN, ipaObjectCache),
+		roleBuilder(l.client, l.config.RoleSearchDN, ipaObjectCache),
 		hostBuilder(l.client, l.config.BaseDN, ipaObjectCache),
 		hostGroupBuilder(l.client, l.config.BaseDN, ipaObjectCache),
 	}
