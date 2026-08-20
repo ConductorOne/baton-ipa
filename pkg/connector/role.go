@@ -32,6 +32,9 @@ type roleResourceType struct {
 	resourceType *v2.ResourceType
 	client       *ldap.Client
 	roleSearchDN *ldap3.DN
+
+	// DN recovery for principals that arrive without one.
+	ipaObjectCache *ipaObjectCache
 }
 
 func (r *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -60,9 +63,6 @@ func roleResource(ctx context.Context, role *ldap.Entry) (*v2.Resource, error) {
 		entryUUID,
 		[]rs.RoleTraitOption{},
 		rs.WithResourceProfile(profile),
-		rs.WithExternalID(&v2.ExternalId{
-			Id: role.DN,
-		}),
 	)
 	if err != nil {
 		return nil, err
@@ -129,20 +129,15 @@ func (r *roleResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 
 func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
-	resourceExternalId := resource.GetExternalId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
-	if resourceExternalId == nil {
-		return nil, "", nil, fmt.Errorf("baton-ipa: role resource missing external ID")
-	}
-	rawDN := resourceExternalId.Id
-	roleDN, err := ldap.CanonicalizeDN(rawDN)
+	roleDN, err := getDNFromResource(resource)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("baton-ipa: invalid role DN: '%s' in role grants: %w", resource.Id.Resource, err)
+		return nil, "", nil, err
 	}
-	l = l.With(zap.Stringer("role_dn", roleDN))
+	l = l.With(zap.String("role_dn", roleDN))
 
 	ldapRole, err := r.client.LdapGetWithStringDN(
 		ctx,
-		rawDN,
+		roleDN,
 		"",
 		nil,
 	)
@@ -155,9 +150,11 @@ func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 	members := parseValues(ldapRole, []string{attrRoleMember})
 	var rv []*v2.Grant
 	for dn := range members.Iter() {
-		_, err := ldap.CanonicalizeDN(dn)
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("baton-ipa: invalid DN in role_members: '%s': %w", dn, err)
+		// One unparseable member DN should cost that member's grant, not the
+		// whole role's grant sync.
+		if _, err := ldap.CanonicalizeDN(dn); err != nil {
+			l.Warn("baton-ipa: invalid DN in role_members", zap.String("member_dn", dn), zap.Error(err))
+			continue
 		}
 
 		member, _, err := r.client.LdapSearchWithStringDN(
@@ -170,17 +167,17 @@ func (r *roleResourceType) Grants(ctx context.Context, resource *v2.Resource, to
 			1,
 		)
 		if err != nil {
-			l.Error("baton-ipa: failed to get role member", zap.String("role_dn", roleDN.String()), zap.String("member_dn", dn), zap.Error(err))
+			l.Error("baton-ipa: failed to get role member", zap.String("member_dn", dn), zap.Error(err))
 		}
 		var g *v2.Grant
 		if len(member) != 1 {
-			l.Warn("baton-ipa: member not found", zap.String("role_dn", roleDN.String()), zap.String("member_dn", dn))
+			l.Warn("baton-ipa: member not found", zap.String("member_dn", dn))
 			continue
 		}
 
 		g = newRoleGrantFromEntry(resource, member[0])
 		if g == nil {
-			l.Error("baton-ipa: grant is not supported for member", zap.String("role_dn", roleDN.String()), zap.String("member_dn", dn), zap.Error(err))
+			l.Error("baton-ipa: grant is not supported for member", zap.String("member_dn", dn), zap.Error(err))
 			continue
 		}
 
@@ -212,12 +209,16 @@ func newRoleGrantFromDN(roleResource *v2.Resource, ipaUniqueID string, resourceT
 				fmt.Sprintf("group:%s:member", ipaUniqueID),
 			},
 		}))
-	case resourceTypeHostGroup, resourceTypeHost:
+	case resourceTypeHostGroup:
 		grantOpts = append(grantOpts, grant.WithAnnotation(&v2.GrantExpandable{
 			EntitlementIds: []string{
 				fmt.Sprintf("host_group:%s:member", ipaUniqueID),
 			},
 		}))
+	case resourceTypeHost:
+		// A host has no members, so there is nothing to expand. Annotating one
+		// as expandable made grant expansion look for a host_group entitlement
+		// keyed by the host's own ID, which never exists.
 	}
 
 	g := grant.NewGrant(
@@ -242,7 +243,7 @@ func (r *roleResourceType) Grant(ctx context.Context, principal *v2.Resource, en
 		return nil, err
 	}
 
-	principalDN, err := getDNFromResource(principal)
+	principalDN, err := resolvePrincipalDN(ctx, r.ipaObjectCache, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -271,7 +272,7 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 		return nil, err
 	}
 
-	principalDN, err := getDNFromResource(principal)
+	principalDN, err := resolvePrincipalDN(ctx, r.ipaObjectCache, principal)
 	if err != nil {
 		return nil, err
 	}
@@ -297,10 +298,11 @@ func (r *roleResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotat
 	return nil, nil
 }
 
-func roleBuilder(client *ldap.Client, roleSearchDN *ldap3.DN) *roleResourceType {
+func roleBuilder(client *ldap.Client, roleSearchDN *ldap3.DN, ipaObjectCache *ipaObjectCache) *roleResourceType {
 	return &roleResourceType{
-		resourceType: resourceTypeRole,
-		client:       client,
-		roleSearchDN: roleSearchDN,
+		resourceType:   resourceTypeRole,
+		client:         client,
+		roleSearchDN:   roleSearchDN,
+		ipaObjectCache: ipaObjectCache,
 	}
 }

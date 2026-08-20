@@ -47,13 +47,16 @@ func hostResource(ctx context.Context, host *ldap.Entry) (*v2.Resource, error) {
 	hostName := host.GetEqualFoldAttributeValue(attrCommonName)
 	description := host.GetEqualFoldAttributeValue(attrDescription)
 
+	// baton-sdk v0.20.x carries the profile on Resource itself rather than on a
+	// trait, so a host can hold its DN even though it has no trait - which is
+	// what Entitlements() and Grants() resolve it from in service mode.
 	resource, err := rs.NewResource(
 		hostName,
 		resourceTypeHost,
 		ipaUniqueID,
 		rs.WithDescription(description),
-		rs.WithExternalID(&v2.ExternalId{
-			Id: hostDN,
+		rs.WithResourceProfile(map[string]interface{}{
+			pathProfileProperty: hostDN,
 		}),
 	)
 	if err != nil {
@@ -117,10 +120,15 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 		return nil, "", nil, err
 	}
 
-	hostDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
+	// The internal "Any" host is virtual and has no directory object, so it has
+	// no DN to resolve.
 	isAnyHost := resource.Id.Resource == internalAnyHostID
-	if hostDN == "" && !isAnyHost {
-		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
+	var hostDN string
+	if !isAnyHost {
+		hostDN, err = getDNFromResource(resource)
+		if err != nil {
+			return nil, "", nil, err
+		}
 	}
 
 	var filter string
@@ -168,15 +176,18 @@ func (r *hostResourceType) Entitlements(ctx context.Context, resource *v2.Resour
 }
 
 func (r *hostResourceType) Grants(ctx context.Context, resource *v2.Resource, token *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	hostDN := resource.GetExternalId().GetId() //nolint:staticcheck // removing this read belongs to the DN-resolution rework in #49, not here
-	isAnyHost := resource.Id.Resource == internalAnyHostID
-	if hostDN == "" && !isAnyHost {
-		return nil, "", nil, fmt.Errorf("baton-ipa: host resource %s has no external ID", resource.DisplayName)
-	}
-
 	bag, page, err := parsePageToken(token.Token, &v2.ResourceId{ResourceType: hbacRuleEntryType})
 	if err != nil {
 		return nil, "", nil, err
+	}
+
+	isAnyHost := resource.Id.Resource == internalAnyHostID
+	var hostDN string
+	if !isAnyHost {
+		hostDN, err = getDNFromResource(resource)
+		if err != nil {
+			return nil, "", nil, err
+		}
 	}
 
 	hbacRuleFilter := fmt.Sprintf(hbacRuleHostFilter, hostDN)

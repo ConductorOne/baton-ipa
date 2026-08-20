@@ -11,10 +11,6 @@ import (
 func TestGetDNFromResource(t *testing.T) {
 	const dn = "cn=admins,cn=groups,cn=accounts,dc=example,dc=test"
 
-	groupWithExternalID, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id", nil,
-		rs.WithExternalID(&v2.ExternalId{Id: dn}))
-	require.NoError(t, err)
-
 	groupWithProfilePath, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id", nil,
 		rs.WithResourceProfile(map[string]interface{}{pathProfileProperty: dn}))
 	require.NoError(t, err)
@@ -23,8 +19,17 @@ func TestGetDNFromResource(t *testing.T) {
 		rs.WithResourceProfile(map[string]interface{}{pathProfileProperty: dn}))
 	require.NoError(t, err)
 
-	groupWithNeither, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id", nil,
+	// Hosts have no trait at all. Since baton-sdk v0.20.x the profile lives on
+	// Resource itself, so they carry a DN like every other resource type.
+	hostWithProfilePath, err := rs.NewResource("host1.example.test", resourceTypeHost, "host-unique-id",
+		rs.WithResourceProfile(map[string]interface{}{pathProfileProperty: dn}))
+	require.NoError(t, err)
+
+	groupWithoutPath, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id", nil,
 		rs.WithResourceProfile(map[string]interface{}{"group_description": "no path here"}))
+	require.NoError(t, err)
+
+	groupWithoutProfile, err := rs.NewGroupResource("admins", resourceTypeGroup, "group-unique-id", nil)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -33,10 +38,11 @@ func TestGetDNFromResource(t *testing.T) {
 		wantDN   string
 		wantErr  bool
 	}{
-		{name: "external_id present", resource: groupWithExternalID, wantDN: dn},
-		{name: "external_id nil but group resource profile path present", resource: groupWithProfilePath, wantDN: dn},
-		{name: "external_id nil but user resource profile path present", resource: userWithProfilePath, wantDN: dn},
-		{name: "neither external_id nor profile path present", resource: groupWithNeither, wantErr: true},
+		{name: "group profile path", resource: groupWithProfilePath, wantDN: dn},
+		{name: "user profile path", resource: userWithProfilePath, wantDN: dn},
+		{name: "host profile path", resource: hostWithProfilePath, wantDN: dn},
+		{name: "profile without a path", resource: groupWithoutPath, wantErr: true},
+		{name: "no profile at all", resource: groupWithoutProfile, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -48,6 +54,32 @@ func TestGetDNFromResource(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.Equal(t, tt.wantDN, got)
+		})
+	}
+}
+
+func TestSameDN(t *testing.T) {
+	const dn = "cn=admins,cn=groups,cn=accounts,dc=example,dc=test"
+
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want bool
+	}{
+		{name: "identical", a: dn, b: dn, want: true},
+		{name: "attribute type case differs", a: dn, b: "CN=admins,CN=groups,CN=accounts,DC=example,DC=test", want: true},
+		{name: "value case differs", a: dn, b: "cn=Admins,cn=Groups,cn=accounts,dc=example,dc=test", want: true},
+		{name: "spacing differs", a: dn, b: "cn=admins, cn=groups, cn=accounts, dc=example, dc=test", want: true},
+		{name: "different object", a: dn, b: "cn=users,cn=groups,cn=accounts,dc=example,dc=test", want: false},
+		{name: "different depth", a: dn, b: "cn=admins,cn=accounts,dc=example,dc=test", want: false},
+		{name: "unparseable", a: dn, b: "not-a-dn", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, sameDN(tt.a, tt.b))
+			require.Equal(t, tt.want, sameDN(tt.b, tt.a))
 		})
 	}
 }

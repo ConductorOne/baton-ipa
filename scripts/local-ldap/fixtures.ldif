@@ -1,0 +1,132 @@
+dn: dc=example,dc=test
+objectClass: top
+objectClass: domain
+dc: example
+
+dn: cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: nsContainer
+cn: accounts
+
+dn: cn=users,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: nsContainer
+cn: users
+
+dn: cn=groups,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: nsContainer
+cn: groups
+
+dn: cn=roles,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: nsContainer
+cn: roles
+
+dn: cn=computers,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: nsContainer
+cn: computers
+
+dn: cn=hostgroups,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: nsContainer
+cn: hostgroups
+
+dn: cn=hbac,dc=example,dc=test
+objectClass: top
+objectClass: nsContainer
+cn: hbac
+
+dn: uid=testuser1,cn=users,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalperson
+objectClass: inetorgperson
+objectClass: posixaccount
+objectClass: ipaobject
+uid: testuser1
+cn: Test User1
+sn: User1
+givenName: Test
+mail: testuser1@example.test
+uidNumber: 1001
+gidNumber: 1001
+homeDirectory: /home/testuser1
+ipaUniqueID: 11111111-1111-1111-1111-111111111111
+
+dn: uid=testuser2,cn=users,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: person
+objectClass: organizationalperson
+objectClass: inetorgperson
+objectClass: posixaccount
+objectClass: ipaobject
+uid: testuser2
+cn: Test User2
+sn: User2
+givenName: Test
+mail: testuser2@example.test
+uidNumber: 1002
+gidNumber: 1002
+homeDirectory: /home/testuser2
+ipaUniqueID: 22222222-2222-2222-2222-222222222222
+
+dn: cn=testgroup1,cn=groups,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: ipausergroup
+objectClass: ipaobject
+cn: testgroup1
+description: baton-ipa integration test group
+gidNumber: 2001
+ipaUniqueID: 33333333-3333-3333-3333-333333333333
+member: uid=testuser1,cn=users,cn=accounts,dc=example,dc=test
+memberManager: uid=testuser2,cn=users,cn=accounts,dc=example,dc=test
+
+dn: cn=testrole1,cn=roles,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: groupofnames
+cn: testrole1
+description: baton-ipa integration test role
+member: uid=testuser1,cn=users,cn=accounts,dc=example,dc=test
+member: cn=testgroup1,cn=groups,cn=accounts,dc=example,dc=test
+
+dn: fqdn=host1.example.test,cn=computers,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: ipahost
+objectClass: ipaobject
+fqdn: host1.example.test
+cn: host1.example.test
+description: baton-ipa integration test host
+ipaUniqueID: 44444444-4444-4444-4444-444444444444
+
+dn: cn=testhostgroup1,cn=hostgroups,cn=accounts,dc=example,dc=test
+objectClass: top
+objectClass: ipahostgroup
+objectClass: ipaobject
+cn: testhostgroup1
+description: baton-ipa integration test host group
+ipaUniqueID: 55555555-5555-5555-5555-555555555555
+member: fqdn=host1.example.test,cn=computers,cn=accounts,dc=example,dc=test
+memberManager: uid=testuser2,cn=users,cn=accounts,dc=example,dc=test
+
+dn: ipaUniqueID=66666666-6666-6666-6666-666666666666,cn=hbac,dc=example,dc=test
+objectClass: top
+objectClass: ipahbacrule
+objectClass: ipaobject
+ipaUniqueID: 66666666-6666-6666-6666-666666666666
+cn: testhbac1
+accessRuleType: allow
+memberHost: cn=testhostgroup1,cn=hostgroups,cn=accounts,dc=example,dc=test
+memberHost: fqdn=host1.example.test,cn=computers,cn=accounts,dc=example,dc=test
+memberUser: uid=testuser1,cn=users,cn=accounts,dc=example,dc=test
+
+dn: ipaUniqueID=77777777-7777-7777-7777-777777777777,cn=hbac,dc=example,dc=test
+objectClass: top
+objectClass: ipahbacrule
+objectClass: ipaobject
+ipaUniqueID: 77777777-7777-7777-7777-777777777777
+cn: allow_all
+accessRuleType: allow
+hostCategory: all
+userCategory: all
