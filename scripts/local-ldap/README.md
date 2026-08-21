@@ -84,8 +84,15 @@ to `Entitlements()`/`Grants()` never carries it — while a CLI sync round-trips
 the resource through the c1z, where it survives. That divergence is why CXP-594
 and CXP-842 both shipped: the failing path was unreachable locally.
 
-`getDNFromResource()` now prefers the trait profile `path` (the carrier c1 does
-persist), so a normal CLI run takes the same branch hosted mode takes. To
-emulate hosted mode exactly, delete the `rs.WithExternalID(...)` options from the
-resource builders in `pkg/connector` and re-run the steps above: the sync must
-still succeed and `check.sh` must still pass.
+`getDNFromResource()` reads the resource profile `path` and nothing else — the
+carrier c1 does persist — and `Resource.ExternalId` is no longer written or read
+anywhere. So a CLI run takes the same branch hosted mode takes, and there is
+nothing to strip to emulate it: running the steps above already exercises the
+hosted read path.
+
+What a local run still cannot reach is the *write* path as hosted mode sees it.
+baton-sdk's local provisioner rebuilds the principal resource without its
+profile, so a CLI `--grant-entitlement` / `--revoke-grant` falls back to
+`resolvePrincipalDN()`'s directory lookup, whereas c1 passes the stored resource
+through intact and the DN comes from the profile. Covering that half needs a
+service-mode run against a c1 tenant.
