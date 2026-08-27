@@ -127,11 +127,6 @@ jobs:
       - name: Build baton-ipa
         run: go build ./cmd/baton-ipa
 
-      # The standalone conductorone/baton CLI trails baton-sdk releases (it was
-      # last built against baton-sdk v0.8.24), so it can't read a c1z file
-      # written by this connector's newer, pebble-store-backed SDK version and
-      # fails with "c1z: invalid file". get-baton installs the baton binary
-      # built from conductorone/baton-sdk instead, which stays in step.
       - name: Install baton
         uses: ConductorOne/github-workflows/actions/get-baton@v4
 
