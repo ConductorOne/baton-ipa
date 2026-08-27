@@ -36,11 +36,11 @@ brew install conductorone/baton/baton conductorone/baton/baton-ipa
 | `--base-dn` | `BATON_BASE_DN`   |  **optional** Base Distinguished name to search for LDAP objects in, for example `DC=example,DC=com` |
 | `--user-search-dn` | `BATON_USER_SEARCH_DN` |  **optional**  Distinguished name to search for User objects in.  If unset the Base DN is used. |
 | `--group-search-dn` | `BATON_GROUP_SEARCH_DN` |  **optional**  Distinguished name to search for Group objects in.  If unset the Base DN is used. |
-| `--role-search-dn` | `BATON_ROLE_SEARCH_DN` |  **optional**  Distinguished name to search for Role objects in.  If unset the Base DN is used. For example: `cn=roles,cn=accounts,dc=example,dc=com` |
+| `--role-search-dn` | `BATON_ROLE_SEARCH_DN` |  **optional**  Distinguished name to search for Role objects in.  If unset the Base DN is used. For example: `cn=roles,cn=accounts,dc=example,dc=com`. Role entries must also have a `cn=roles` component in their own DN — pointing this at a container without one syncs zero roles. |
 | `--filter` | `BATON_FILTER` |  **optional**  An additional LDAP filter applied to every search. For example `(!(objectClass=computer))` excludes every entry with that object class. |
 | `--insecure-skip-verify` | `BATON_INSECURE_SKIP_VERIFY` |  **optional**  When connecting over TLS, skip verification of the server certificate. `true` or `false`.  Defaults to `false` |
 | `--disable-operational-attrs` | `BATON_DISABLE_OPERATIONAL_ATTRS` |  **optional**  Do not fetch operational attributes. Some LDAP servers do not support them. When set, `created_at` and last login are not synced. `true` or `false`.  Defaults to `false` |
-| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable provisioning by `baton-ipa`: grant and revoke on group `member` and `manager` and on role `member`, and deletion of user accounts. `true` or `false`.  Defaults to `false` |
+| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable provisioning by `baton-ipa`: grant and revoke on group `member` and `manager` and on role `member`. `true` or `false`.  Defaults to `false` |
 
 Use `baton-ipa --help` to see all configuration flags and environment variables.
 
@@ -119,7 +119,7 @@ After successfully syncing data, use the baton CLI to list the resources and see
 
 - Users (`posixAccount`)
 - Groups (`ipaUserGroup`) — entitlements: `member`, `manager`
-- Roles (`groupOfNames` under the role search DN) — entitlement: `member`, grantable to users, groups, hosts and host groups
+- Roles (`groupOfNames` under the role search DN, matching entries also need a `cn=roles` component in their own DN) — entitlement: `member`, grantable to users, groups, hosts and host groups
 - Hosts (`ipaHost`)
 - Host groups (`ipaHostGroup`)
 

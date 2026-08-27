@@ -20,11 +20,11 @@ While developing the connector, please fill out this form. This information is n
     | :--- | :--- | :--- | :--- | :--- |
     | Groups | ✅ `member` and `manager`, by adding the principal's DN to `member` / `memberManager` | ✅ removes the DN from that attribute | - | - |
     | Roles | ✅ `member`, accepting users, groups, hosts and host groups as principals | ✅ | - | - |
-    | Users | - | - | - | ✅ deletes the directory entry |
+    | Users | - | - | - | ⚠️ not working today (see below) |
     | Hosts | - | - | - | - |
     | Host groups | - | - | - | - |
 
-    Account creation is not implemented. Account deprovisioning is a hard delete of the entry, not a disable.
+    Account creation is not implemented. Account deprovisioning is meant to be a hard delete of the entry, not a disable, but `Delete`/`Get` currently canonicalize the resource ID as a DN while user resources are keyed by `ipaUniqueID`, so a delete call errors instead of removing the entry. Not documented as a working capability until that's fixed.
 
 ## Connector credentials
 
@@ -51,7 +51,7 @@ While developing the connector, please fill out this form. This information is n
     * If applicable: Is the list of scopes or permissions different to sync (read) versus provision (read-write)? If so, list the difference here.
 
       * **Sync (read-only)**: read access over the base DN subtree. Reading `krbLastSuccessfulAuth` for last login also requires that operational attributes are available; the `--disable-operational-attrs` flag turns that off, along with created-at.
-      * **Provisioning (read-write)**: additionally, write access to the `member` and `memberManager` attributes on the groups and roles C1 should manage, and delete permission on user entries if account deprovisioning is wanted.
+      * **Provisioning (read-write)**: additionally, write access to the `member` and `memberManager` attributes on the groups and roles C1 should manage.
 
     * What level of access or permissions does the user need in order to create the credentials?
 
