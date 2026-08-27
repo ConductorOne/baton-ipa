@@ -127,17 +127,16 @@ jobs:
       - name: Build baton-ipa
         run: go build ./cmd/baton-ipa
 
-      # scripts/get-baton.sh resolves the release through an unauthenticated API
-      # call, which is rate limited on shared runner IPs. Use the workflow token.
+      # The standalone conductorone/baton CLI trails baton-sdk releases (it was
+      # last built against baton-sdk v0.8.24), so it can't read a c1z file
+      # written by this connector's newer, pebble-store-backed SDK version and
+      # fails with "c1z: invalid file". get-baton installs the baton binary
+      # built from conductorone/baton-sdk instead, which stays in step.
       - name: Install baton
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh release download --repo ConductorOne/baton \
-            --pattern 'baton-*-linux-amd64.tar.gz' --output baton.tar.gz --clobber
-          tar xzf baton.tar.gz
-          ./baton --version
+        uses: ConductorOne/github-workflows/actions/get-baton@v4
+
+      - name: Check baton version
+        run: baton --version
 
       # CXP-842 regression guard. Every assertion below is a grant or
       # entitlement the connector can only produce by resolving an LDAP DN from
@@ -159,7 +158,7 @@ jobs:
 
           assert_grant() {
             local entitlement="$1" principal="$2"
-            if ! ./baton grants --file=sync.c1z --entitlement="$entitlement" --output-format=json \
+            if ! baton grants --file=sync.c1z --entitlement="$entitlement" --output-format=json \
               | jq --exit-status --arg p "$principal" \
                 'any(.grants[]?; .principal.id.resource == $p)' >/dev/null; then
               echo "::error::no grant of '$entitlement' to '$principal'"
@@ -170,7 +169,7 @@ jobs:
 
           assert_entitlement() {
             local entitlement="$1"
-            if ! ./baton entitlements --file=sync.c1z --output-format=json \
+            if ! baton entitlements --file=sync.c1z --output-format=json \
               | jq --exit-status --arg id "$entitlement" \
                 'any(.entitlements[]?; .entitlement.id == $id)' >/dev/null; then
               echo "::error::entitlement '$entitlement' was not synced"
