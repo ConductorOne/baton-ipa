@@ -40,7 +40,7 @@ brew install conductorone/baton/baton conductorone/baton/baton-ipa
 | `--filter` | `BATON_FILTER` |  **optional**  An additional LDAP filter applied to every search. For example `(!(objectClass=computer))` excludes every entry with that object class. |
 | `--insecure-skip-verify` | `BATON_INSECURE_SKIP_VERIFY` |  **optional**  When connecting over TLS, skip verification of the server certificate. `true` or `false`.  Defaults to `false` |
 | `--disable-operational-attrs` | `BATON_DISABLE_OPERATIONAL_ATTRS` |  **optional**  Do not fetch operational attributes. Some LDAP servers do not support them. When set, `created_at` and last login are not synced. `true` or `false`.  Defaults to `false` |
-| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable provisioning by `baton-ipa`: grant and revoke on group `member` and `manager` and on role `member`. `baton-ipa` also declares user account deletion as a capability, but that path currently errors instead of deleting (see Data Model). `true` or `false`.  Defaults to `false` |
+| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable provisioning by `baton-ipa`: grant and revoke on group `member` and `manager` and on role `member`. `baton-ipa` also declares user account deletion as a capability, but that path currently errors instead of deleting: the resource ID the connector stores for a user (`ipaUniqueID`) doesn't match what the delete path expects (a DN). `true` or `false`.  Defaults to `false` |
 
 Use `baton-ipa --help` to see all configuration flags and environment variables.
 
@@ -121,7 +121,7 @@ After successfully syncing data, use the baton CLI to list the resources and see
 - Groups (`ipaUserGroup`) — entitlements: `member`, `manager`
 - Roles (`groupOfNames` under the role search DN, matching entries also need a `cn=roles` component in their own DN) — entitlement: `member`, grantable to users, groups, hosts and host groups
 - Hosts (`ipaHost`)
-- Host groups (`ipaHostGroup`)
+- Host groups (`ipaHostGroup`) — entitlements: `member`, `manager`, plus HBAC-derived rules
 
 HBAC rules (`ipaHBACRule`) are read but are not synced as a resource type of their own. They are the source of the entitlements that appear on hosts and host groups: each rule naming a host or host group becomes an entitlement on it. A rule whose `hostCategory` or `userCategory` is `all` — including the `allow_all` rule FreeIPA ships — is emitted against a single virtual `any-host` or `anyone-group` resource (displayed in C1 as **Any** or **Anyone**) rather than expanded across every host.
 
