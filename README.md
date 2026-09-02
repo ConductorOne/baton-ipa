@@ -1,20 +1,16 @@
-![Baton Logo](./docs/images/baton-logo.png)
-
 # `baton-ipa` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-ipa.svg)](https://pkg.go.dev/github.com/conductorone/baton-ipa) ![main ci](https://github.com/conductorone/baton-ipa/actions/workflows/main.yaml/badge.svg)
 
-`baton-ipa` is a connector for IPA (Identity, Policy & Audit) Servers built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It communicates using the LDAP protocol to sync data about roles, users, and groups.
+`baton-ipa` is a connector for FreeIPA and Red Hat Identity Management, built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It speaks LDAP to the IPA directory to sync users, groups, roles, hosts and host groups, and reads HBAC rules to derive host access.
 
 Check out [Baton](https://github.com/conductorone/baton) to learn more about the project in general.
 
-## LDAP
-
 ## Credentials
 
-To access the IPA server, you must provide the username and password you use to login to the IPA server. 
+The connector binds to the IPA directory over LDAP. You need the distinguished name and password of an account that can read the directory — for example `uid=c1-service,cn=users,cn=accounts,dc=example,dc=com`. To provision access, that account also needs write access to the `member` and `memberManager` attributes on the groups and roles it manages.
 
 # Getting Started
 
-_Also see [Set up an LDAP connector](https://www.conductorone.com/docs/product/integrations/ldap/) in the ConductorOne documentation for instructions including using LDAP from ConductorOne._
+_See [docs/connector.mdx](./docs/connector.mdx) for the source for the published, customer-facing setup walkthrough, including how to configure the connector from ConductorOne. It's written in Mintlify's format and won't render fully on GitHub — see it live on the ConductorOne docs site once published._
 
 ## Installing
 
@@ -39,8 +35,12 @@ brew install conductorone/baton/baton conductorone/baton/baton-ipa
 | `--url` | `BATON_URL` | **required** URL to the LDAP server. Can be either `ldap:` or `ldaps:` schemes, sets the hostname, and optionally a port number. For example: `ldaps://ldap.example.com:636` |
 | `--base-dn` | `BATON_BASE_DN`   |  **optional** Base Distinguished name to search for LDAP objects in, for example `DC=example,DC=com` |
 | `--user-search-dn` | `BATON_USER_SEARCH_DN` |  **optional**  Distinguished name to search for User objects in.  If unset the Base DN is used. |
-| `--group-search-dn` | `BATON_GROUP_SEARCH_DN` |  **optional**  Distinguished name to search for User objects in.  If unset the Base DN is used. |
-| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable Provisioning of Groups and Roles by `baton-ipa`. `true` or `false`.  Defaults to `false` |
+| `--group-search-dn` | `BATON_GROUP_SEARCH_DN` |  **optional**  Distinguished name to search for Group objects in.  If unset the Base DN is used. |
+| `--role-search-dn` | `BATON_ROLE_SEARCH_DN` |  **optional**  Distinguished name to search for Role objects in.  If unset the Base DN is used. For example: `cn=roles,cn=accounts,dc=example,dc=com`. Role entries must also have a `cn=roles` component in their own DN — pointing this at a container without one syncs zero roles. |
+| `--filter` | `BATON_FILTER` |  **optional**  An additional LDAP filter applied to every search. For example `(!(objectClass=computer))` excludes every entry with that object class. |
+| `--insecure-skip-verify` | `BATON_INSECURE_SKIP_VERIFY` |  **optional**  When connecting over TLS, skip verification of the server certificate. `true` or `false`.  Defaults to `false` |
+| `--disable-operational-attrs` | `BATON_DISABLE_OPERATIONAL_ATTRS` |  **optional**  Do not fetch operational attributes. Some LDAP servers do not support them. When set, `created_at` and last login are not synced. `true` or `false`.  Defaults to `false` |
+| `--provisioning` | `BATON_PROVISIONING` |  **optional** Enable provisioning by `baton-ipa`: grant and revoke on group `member` and `manager` and on role `member`. `baton-ipa` also declares user account deletion as a capability, but that path currently errors instead of deleting: the resource ID the connector stores for a user (`ipaUniqueID`) doesn't match what the delete path expects (a DN). `true` or `false`.  Defaults to `false` |
 
 Use `baton-ipa --help` to see all configuration flags and environment variables.
 
@@ -115,14 +115,15 @@ After successfully syncing data, use the baton CLI to list the resources and see
 
 # Data Model
 
-`baton-ipa` will fetch information about the following IPA resources:
+`baton-ipa` syncs the following IPA resource types:
 
-- Users
-- Roles
-- Groups
-- Host
-- Host Groups
-- HBAC Rules
+- Users (`posixAccount`)
+- Groups (`ipaUserGroup`) — entitlements: `member`, `manager`
+- Roles (`groupOfNames` under the role search DN, matching entries also need a `cn=roles` component in their own DN) — entitlement: `member`, grantable to users, groups, hosts and host groups
+- Hosts (`ipaHost`)
+- Host groups (`ipaHostGroup`) — entitlements: `member`, `manager`, plus HBAC-derived rules
+
+HBAC rules (`ipaHBACRule`) are read but are not synced as a resource type of their own. They are the source of the entitlements that appear on hosts and host groups: each rule naming a host or host group becomes an entitlement on it. A rule whose `hostCategory` or `userCategory` is `all` — including the `allow_all` rule FreeIPA ships — is emitted against a single virtual `any-host` or `anyone-group` resource (displayed in C1 as **Any** or **Anyone**) rather than expanded across every host.
 
 `baton-ipa` will sync information only from under the base DN specified by the `--base-dn` flag in the configuration.
 
