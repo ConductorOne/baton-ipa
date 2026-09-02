@@ -8,9 +8,6 @@ sidebarTitle: "FreeIPA"
 
 The FreeIPA connector reads your directory over LDAP. It works with FreeIPA and with Red Hat Identity Management, which ships the same server components.
 
-{/* AUTO-GENERATED:START - capabilities
-     Generated from baton_capabilities.json. Do not edit manually. */}
-
 ## Capabilities
 
 | Resource | Sync | Provision |
@@ -21,7 +18,7 @@ The FreeIPA connector reads your directory over LDAP. It works with FreeIPA and 
 | Hosts (`ipaHost` in IPA) | <Icon icon="square-check" iconType="solid" color="#c937ae"/> | |
 | Host groups (`ipaHostGroup` in IPA) | <Icon icon="square-check" iconType="solid" color="#c937ae"/> | |
 
-{/* AUTO-GENERATED:END - capabilities */}
+This table is hand-maintained, not generated from `baton_capabilities.json` — it adds IPA object-class annotations the JSON doesn't carry, and the JSON's own `CAPABILITY_RESOURCE_DELETE` on `user` has no column here since account deletion doesn't work end to end today (see notes below).
 
 **Notes:**
 
