@@ -18,7 +18,7 @@ The latest release is available from the [`baton-ipa` Github releases page](http
 
 Pre-built container images compatible with Docker and other container runtimes are [published to GHCR](https://github.com/ConductorOne/baton-ipa/pkgs/container/baton-ipa):
 ```
-docker pull ghcr.io/conductorone/baton-ipa:latest
+docker pull public.ecr.aws/conductorone/baton-ipa:latest
 ```
 
 Additionally for testing on workstations, `baton-ipa` can be installed from Homebrew:
